@@ -121,6 +121,26 @@ async def test_terminal_run_retask_does_not_duplicate(
     assert len(updated["candidates"]) == 4
 
 
+async def test_task_fallback_marks_failed_when_execution_crashes(
+    client: AsyncClient, credentials, monkeypatch
+) -> None:
+    """兜底落败：执行崩溃 → rollback → 经任务参数重载落 FAILED（订阅方不空等）。"""
+    from app.services import generation
+
+    await _register(client, credentials["username"])
+    run = await _create_run(client)
+
+    async def explode(session, run):
+        raise RuntimeError("模拟未预期崩溃")
+
+    monkeypatch.setattr(generation, "execute", explode)
+    await _run_task(run["id"])
+
+    updated = (await client.get(f"/api/runs/{run['id']}")).json()
+    assert updated["status"] == "failed"
+    assert updated["error"] == "生成失败，请重试"
+
+
 @pytest.mark.parametrize(
     "payload",
     [

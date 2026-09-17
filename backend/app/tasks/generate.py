@@ -28,8 +28,10 @@ async def generate_images(ctx: dict, run_id: str) -> None:
         except asyncio.CancelledError:
             # job_timeout 以 task.cancel() 实现（BaseException，except Exception 接不住）。
             # 不落终态的话：run 卡在 running，重投时终态短路失效 → 二次调用模型。
+            # 注意：rollback 会过期 ORM 实例，重载必须用任务参数而非 run.id（同步访问过期
+            # 属性会触发隐式刷新，在 AsyncSession 下抛 MissingGreenlet）。
             await session.rollback()
-            fresh = await runs.load(session, run.id)
+            fresh = await runs.load(session, uuid.UUID(run_id))
             if fresh is not None and not fresh.status.is_terminal:
                 await asyncio.shield(
                     runs.finish_failed(session, fresh, generation.UNEXPECTED_FAILURE_MESSAGE)
@@ -40,6 +42,6 @@ async def generate_images(ctx: dict, run_id: str) -> None:
             # 订阅进度的客户端不能空等——rollback 后补一帧 FAILED 终态。
             logger.exception("generate_images 兜底落败 run_id=%s", run_id)
             await session.rollback()
-            fresh = await runs.load(session, run.id)
+            fresh = await runs.load(session, uuid.UUID(run_id))
             if fresh is not None and not fresh.status.is_terminal:
                 await runs.finish_failed(session, fresh, generation.UNEXPECTED_FAILURE_MESSAGE)
