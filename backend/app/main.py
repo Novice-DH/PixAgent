@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import health
+from app.routers import auth, health
 
 settings = get_settings()
 
@@ -16,6 +16,7 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
+app.include_router(auth.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
 
 # 生产态：前端构建产物存在时由后端同源托管（开发态目录不存在，跳过）

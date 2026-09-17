@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     s3_bucket: str = "retouch"
     s3_url_ttl: int = 900
 
-    jwt_secret: str = "dev-only-change-me-dev-only-change-me"
+    jwt_secret: str = "dev-only-secret-please-change-in-production"
     jwt_ttl_hours: int = 24
 
     image_provider: str = "mock"
