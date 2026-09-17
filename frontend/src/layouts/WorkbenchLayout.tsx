@@ -1,5 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
+import { useAuthActions, useCurrentUser } from '@/hooks/useAuth'
+
 const NAV_ITEMS = [
   {
     to: '/create',
@@ -34,8 +36,11 @@ const NAV_ITEMS = [
   },
 ]
 
-/** 工作台布局：左侧导航默认 w-16 仅图标，悬停展开 w-52 显示文字。 */
+/** 工作台布局：左侧导航默认 w-16 仅图标，悬停展开 w-52 显示文字；底部为登出按钮。 */
 export default function WorkbenchLayout() {
+  const { data: user } = useCurrentUser()
+  const { logout } = useAuthActions()
+
   return (
     <div className="flex min-h-screen">
       <nav className="group flex w-16 flex-col gap-2 overflow-hidden border-r border-line bg-paper p-3 transition-[width] duration-200 hover:w-52">
@@ -51,6 +56,22 @@ export default function WorkbenchLayout() {
             </span>
           </NavLink>
         ))}
+
+        {/* 登出：头像圈显示用户名首字母，悬停随导航一起展开文字 */}
+        <button
+          type="button"
+          onClick={() => logout.mutate()}
+          disabled={logout.isPending}
+          title="退出登录"
+          className="mt-auto flex items-center gap-3 rounded-control px-2.5 py-2 text-sm text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-60"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-semibold text-brand-strong">
+            {user ? user.username.charAt(0).toUpperCase() : '·'}
+          </span>
+          <span className="whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100">
+            {logout.isPending ? '正在退出…' : '退出登录'}
+          </span>
+        </button>
       </nav>
       <main className="min-w-0 flex-1">
         <Outlet />
