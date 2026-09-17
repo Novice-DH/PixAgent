@@ -6,7 +6,7 @@ probe 是纯函数：完整解码暴露截断/损坏数据，自设像素上限 
 from dataclasses import dataclass
 from io import BytesIO
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MIN_EDGE_PX = 32
@@ -42,13 +42,18 @@ def _has_alpha(img: Image.Image) -> bool:
 
 
 def probe(data: bytes) -> ImageMeta:
-    """校验并提取图片元信息：先看头（格式/尺寸，拦解压炸弹），再完整解码（拦截断/损坏）。"""
+    """校验并提取图片元信息：先看头（格式/尺寸，拦解压炸弹），再完整解码（拦截断/损坏）。
+
+    Pillow 的 DecompressionBombError 在 open() 阶段即可抛出（读 IHDR 声明尺寸），
+    且不是 OSError 子类——两段 try 都按"一切异常坍缩为 ImageRejected"处理。
+    """
     if not data:
         raise ImageRejected(REJECTED_MESSAGE)
 
     try:
         img = Image.open(BytesIO(data))
-    except (UnidentifiedImageError, OSError):
+    except Exception:
+        # UnidentifiedImageError / DecompressionBombError / OSError 等统一坍缩
         raise ImageRejected(REJECTED_MESSAGE) from None
 
     try:
@@ -60,13 +65,13 @@ def probe(data: bytes) -> ImageMeta:
             raise ImageRejected(REJECTED_MESSAGE)
         if width * height > MAX_PIXELS:
             raise ImageRejected(REJECTED_MESSAGE)
-        # 完整解码：只读文件头会放过截断/损坏数据；DecompressionBombError 也在此抛出
+        # 完整解码：只读文件头会放过截断/损坏数据
         img.load()
         alpha = _has_alpha(img)
     except ImageRejected:
         raise
     except Exception:
-        # OSError（截断）、DecompressionBombError 等一切解码失败统一坍缩
+        # OSError（截断）、DecompressionBombError（load 阶段阈值）等统一坍缩
         raise ImageRejected(REJECTED_MESSAGE) from None
     finally:
         img.close()

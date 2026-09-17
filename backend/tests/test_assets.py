@@ -3,6 +3,7 @@
 图片一律用 PIL 在内存中现做真实字节，不依赖 fixture 文件；
 图片字节经 MinIO 真实读写（bucket 由 session 夹具保证存在）。
 """
+import struct
 from io import BytesIO
 
 from PIL import Image
@@ -10,6 +11,7 @@ from sqlalchemy import func, select
 
 from app.db import SessionFactory
 from app.models.asset import Asset
+from app.models.user import User
 from app.services.images import ImageRejected, probe
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -70,9 +72,16 @@ async def test_upload_returns_metadata_and_signed_url(client, credentials) -> No
     assert "localhost:7313" in body["url"]
     assert "X-Amz-Signature" in body["url"]  # s3v4 预签名
 
-    # 元数据落库、字节不入库：全表只有一行记录且无任何字节列
+    # 元数据落库、字节不入库：本测试用户的素材恰好一条（过滤共享库中的其他数据）
     async with SessionFactory() as session:
-        count = (await session.execute(select(func.count()).select_from(Asset))).scalar_one()
+        user_id = await session.scalar(
+            select(User.id).where(User.username == credentials["username"])
+        )
+        count = (
+            await session.execute(
+                select(func.count()).select_from(Asset).where(Asset.user_id == user_id)
+            )
+        ).scalar_one()
     assert count == 1
 
 
@@ -162,6 +171,22 @@ def test_probe_rejects_empty_and_garbage() -> None:
             pass
         else:
             raise AssertionError(f"{bad[:8]!r} 应被拒绝")
+
+
+def test_probe_rejects_decompression_bomb_header() -> None:
+    """伪造 IHDR 声明 20000×20000（≈4 亿像素）的仅头部 PNG：open 阶段防炸弹异常 → 422 而非 500。"""
+    ihdr = struct.pack(">II", 20000, 20000) + b"\x08\x06\x00\x00\x00"
+    bomb = (
+        PNG_SIGNATURE
+        + b"\x00\x00\x00\rIHDR" + ihdr
+        + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    try:
+        probe(bomb)
+    except ImageRejected:
+        pass
+    else:
+        raise AssertionError("解压炸弹头部应被拒绝")
 
 
 def test_probe_meta_and_extension_mapping() -> None:
