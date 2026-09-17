@@ -5,8 +5,10 @@
 
 from collections.abc import Awaitable, Callable
 
+from app.tasks.generate import generate_images
 from app.tasks.ping import ping
 
 TASKS: dict[str, Callable[..., Awaitable[object]]] = {
     "ping": ping,
+    "generate_images": generate_images,
 }

@@ -7,10 +7,9 @@ import uuid
 from enum import StrEnum
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String
-from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import UUIDBase
+from app.models.base import UUIDBase, enum_column
 
 
 class AssetKind(StrEnum):
@@ -29,34 +28,14 @@ class AssetSource(StrEnum):
     tool = "tool"
 
 
-def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
-    return [member.value for member in enum_cls]
-
-
 class Asset(UUIDBase):
     __tablename__ = "assets"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    kind: Mapped[AssetKind] = mapped_column(
-        SAEnum(
-            AssetKind,
-            name="asset_kind",
-            values_callable=_enum_values,
-            native_enum=False,
-            length=16,
-        )
-    )
-    source: Mapped[AssetSource] = mapped_column(
-        SAEnum(
-            AssetSource,
-            name="asset_source",
-            values_callable=_enum_values,
-            native_enum=False,
-            length=16,
-        )
-    )
+    kind: Mapped[AssetKind] = enum_column(AssetKind, name="asset_kind")
+    source: Mapped[AssetSource] = enum_column(AssetSource, name="asset_source")
     storage_key: Mapped[str] = mapped_column(String(255), unique=True)
     image_format: Mapped[str] = mapped_column(String(8))
     width: Mapped[int] = mapped_column(Integer)

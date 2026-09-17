@@ -4,6 +4,7 @@
 """
 
 from app.models.asset import Asset
+from app.models.tool_run import RunStatus, ToolRun
 from app.models.user import User
 
-__all__: list[str] = ["Asset", "User"]
+__all__: list[str] = ["Asset", "RunStatus", "ToolRun", "User"]
