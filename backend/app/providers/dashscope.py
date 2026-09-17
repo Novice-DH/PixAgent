@@ -77,6 +77,7 @@ class DashscopeImageProvider:
             return await self._download(client, result_urls)
 
     async def _submit(self, client: httpx.AsyncClient, payload: dict) -> str:
+        body: dict | None = None
         try:
             response = await client.post(TEXT2IMAGE_PATH, json=payload)
             response.raise_for_status()
@@ -96,6 +97,7 @@ class DashscopeImageProvider:
     ) -> list[str]:
         deadline = asyncio.get_running_loop().time() + POLL_TIMEOUT_SECONDS
         reported: set[str] = set()
+        body: dict | None = None
         while True:
             if asyncio.get_running_loop().time() >= deadline:
                 raise ProviderError("模型服务任务超时，请稍后重试")

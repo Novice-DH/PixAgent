@@ -69,8 +69,10 @@ export function useRun(runId: string | undefined) {
       }
     }
     source.onerror = () => {
-      // 连接出错回退快照（不自旋重连）；refetch 防止界面停在过期进度
+      // 连接出错回退快照（不自旋重连）：清掉实时帧，让 refetch 后的快照重新成为事实源，
+      // 否则断连前最后一帧会永远压住新快照——界面停在过期进度
       source.close()
+      setLive(null)
       queryClient.invalidateQueries({ queryKey: runKey(runId) })
     }
     return () => source.close()

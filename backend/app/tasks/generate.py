@@ -3,6 +3,7 @@
 worker 重启后 ARQ 重投未确认任务是常态而非异常——第一件事查终态，
 把"重复消费不二次调用模型（真实平台即二次扣费）"变成最显眼的一行。
 """
+import asyncio
 import logging
 import uuid
 
@@ -24,6 +25,16 @@ async def generate_images(ctx: dict, run_id: str) -> None:
             return
         try:
             await generation.execute(session, run)
+        except asyncio.CancelledError:
+            # job_timeout 以 task.cancel() 实现（BaseException，except Exception 接不住）。
+            # 不落终态的话：run 卡在 running，重投时终态短路失效 → 二次调用模型。
+            await session.rollback()
+            fresh = await runs.load(session, run.id)
+            if fresh is not None and not fresh.status.is_terminal:
+                await asyncio.shield(
+                    runs.finish_failed(session, fresh, generation.UNEXPECTED_FAILURE_MESSAGE)
+                )
+            raise
         except Exception:
             # 兜底：execute 内部已两级分类，走到这里说明分类过程本身故障（如终态落库失败）。
             # 订阅进度的客户端不能空等——rollback 后补一帧 FAILED 终态。
