@@ -29,10 +29,51 @@
   /* 圆角 */
   --radius-card: 18px;
   --radius-control: 12px;
+  --radius-panel: 26px;
 
   /* 阴影 */
   --shadow-card: 0 16px 42px rgb(25 31 26 / 0.09);
   --shadow-control: 0 8px 22px rgb(27 31 27 / 0.08);
+  --shadow-lift: 0 20px 46px -18px rgb(20 26 20 / 0.18);
+  --shadow-panel: 0 28px 72px -26px rgb(20 26 20 / 0.3);
+
+  /* 动效 */
+  --animate-rise: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 14px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* 光晕：大面积冷色 + 小面积强调色，取色跟随品牌 token */
+@utility bg-glow {
+  background-image:
+    radial-gradient(
+      44rem 30rem at 12% 6%,
+      color-mix(in srgb, var(--color-brand) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      26rem 20rem at 88% 16%,
+      color-mix(in srgb, var(--color-accent) 24%, transparent),
+      transparent 74%
+    );
+}
+
+/* 网格底纹：56px 方格线，径向 mask 向下淡出避免干扰正文 */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-ink) 7%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 110% 85% at 50% 0%, black 35%, transparent 78%);
 }
 
 @layer base {
@@ -43,5 +84,18 @@
   :focus-visible {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
+  }
+
+  /* 动效是增强不是必需：前庭敏感用户的系统偏好优先于编排 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

@@ -1,7 +1,9 @@
-/** 认证页：login / register 双模式由 ?mode= 驱动，注册即建会话，成功一律进 /create。 */
+/** 认证页：login / register 双模式由 ?mode= 驱动，注册即建会话，成功一律进 /create。
+ * 本期仅视觉包装（品牌卡片面板），表单行为契约逐项保留。 */
 import { useState } from 'react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 
+import BrandMark from '@/components/BrandMark'
 import { errorMessage, useAuthActions, useCurrentUser } from '@/hooks/useAuth'
 
 type AuthMode = 'login' | 'register'
@@ -66,63 +68,62 @@ export default function AuthPage() {
   const bannerError = clientError ?? errorMessage(mutation.error)
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-control bg-brand text-lg font-semibold text-paper">
-            P
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {mode === 'login' ? '登录 PixAgent' : '创建 PixAgent 账号'}
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            {mode === 'login' ? '继续你的修图工作台' : '一句话生成可投放的商品图'}
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-4 rounded-card border border-line bg-paper p-6 shadow-card"
-        >
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="text-muted">用户名</span>
-            <input
-              name="username"
-              autoComplete="username"
-              placeholder="3–32 位字母、数字或下划线"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              className="rounded-control border border-line bg-soft px-3 py-2 text-ink outline-none placeholder:text-faint focus:border-brand"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="text-muted">密码</span>
-            <input
-              name="password"
-              type="password"
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              placeholder="6–64 位"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="rounded-control border border-line bg-soft px-3 py-2 text-ink outline-none placeholder:text-faint focus:border-brand"
-            />
-          </label>
-
-          {bannerError && (
-            <p role="alert" className="rounded-control bg-danger/10 px-3 py-2 text-sm text-danger">
-              {bannerError}
+    <main className="relative flex min-h-screen items-center justify-center bg-glow px-4 py-12">
+      <div className="relative w-full max-w-sm">
+        <div className="rounded-panel border border-line bg-paper p-6 shadow-panel sm:p-8">
+          <div className="mb-6 text-center">
+            <div className="mb-3 flex justify-center">
+              <BrandMark size="md" />
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {mode === 'login' ? '登录' : '创建账号'}
+            </h1>
+            <p className="mt-1 text-sm text-muted">
+              {mode === 'login' ? '继续你的修图工作台' : '一句话生成可投放的商品图'}
             </p>
-          )}
+          </div>
 
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="rounded-control bg-brand px-4 py-2.5 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:opacity-60"
-          >
-            {mutation.isPending ? '请稍候…' : mode === 'login' ? '登录' : '注册并开始'}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-muted">用户名</span>
+              <input
+                name="username"
+                autoComplete="username"
+                placeholder="3–32 位字母、数字或下划线"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                className="rounded-control border border-line bg-soft px-3 py-2 text-ink outline-none placeholder:text-faint focus:border-brand"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-muted">密码</span>
+              <input
+                name="password"
+                type="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                placeholder="6–64 位"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="rounded-control border border-line bg-soft px-3 py-2 text-ink outline-none placeholder:text-faint focus:border-brand"
+              />
+            </label>
+
+            {bannerError && (
+              <p role="alert" className="rounded-control bg-danger/10 px-3 py-2 text-sm text-danger">
+                {bannerError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={mutation.isPending}
+              className="rounded-control bg-brand px-4 py-2.5 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:opacity-60"
+            >
+              {mutation.isPending ? '请稍候…' : mode === 'login' ? '登录' : '注册并开始'}
+            </button>
+          </form>
+        </div>
 
         <p className="mt-4 text-center text-sm text-muted">
           {mode === 'login' ? '还没有账号？' : '已有账号？'}
@@ -134,6 +135,10 @@ export default function AuthPage() {
             {mode === 'login' ? '免费注册' : '直接登录'}
           </button>
         </p>
+
+        <Link to="/" className="mt-2 block text-center text-sm text-faint transition-colors hover:text-ink">
+          ← 返回首页
+        </Link>
       </div>
     </main>
   )

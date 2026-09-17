@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
+import BrandMark from '@/components/BrandMark'
 import { useAuthActions, useCurrentUser } from '@/hooks/useAuth'
 
 const NAV_ITEMS = [
@@ -44,6 +45,14 @@ export default function WorkbenchLayout() {
   return (
     <div className="flex min-h-screen">
       <nav className="group flex w-16 flex-col gap-2 overflow-hidden border-r border-line bg-paper p-3 transition-[width] duration-200 hover:w-52">
+        {/* 品牌区：与落地页同一 BrandMark 单点，随侧栏展开显示文字 */}
+        <div className="mb-1 flex items-center gap-3 border-b border-line px-2.5 pb-3">
+          <BrandMark size="sm" />
+          <span className="whitespace-nowrap text-sm font-semibold opacity-0 transition-opacity group-hover:opacity-100">
+            AI 修图智能体
+          </span>
+        </div>
+
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
