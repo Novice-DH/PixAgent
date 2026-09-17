@@ -28,6 +28,9 @@ class Credentials(BaseModel):
     def _validate_password(cls, value: str) -> str:
         if not 6 <= len(value) <= 64:
             raise ValueError("密码长度需为 6–64 位")
+        if len(value.encode("utf-8")) > 72:
+            # bcrypt 只取前 72 字节且 5.x 对超长输入直接抛错——422 拒绝，绝不 500、绝不静默截断
+            raise ValueError("密码过长（UTF-8 编码需不超过 72 字节）")
         return value
 
 

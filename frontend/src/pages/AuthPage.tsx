@@ -16,6 +16,10 @@ function validate(username: string, password: string): string | null {
   if (password.length < 6 || password.length > 64) {
     return '密码长度需为 6–64 位'
   }
+  // 与后端一致：bcrypt 只接受 72 字节以内，多字节字符提前拦下
+  if (new TextEncoder().encode(password).length > 72) {
+    return '密码过长（UTF-8 编码需不超过 72 字节）'
+  }
   return null
 }
 

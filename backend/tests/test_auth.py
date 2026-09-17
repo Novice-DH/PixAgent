@@ -84,6 +84,15 @@ async def test_invalid_username_returns_422(client: AsyncClient) -> None:
         assert response.status_code == 422, f"用户名 {bad_username!r} 应校验失败"
 
 
+async def test_over_72_bytes_password_returns_422_not_500(client: AsyncClient) -> None:
+    """多字节密码可同时满足"6–64 位"却超 bcrypt 72 字节上限，必须 422 而非 500。"""
+    response = await client.post(
+        "/api/auth/register", json={"username": "byte_limit_user", "password": "密" * 30}
+    )
+    assert response.status_code == 422
+    assert "72" in response.json()["detail"][0]["msg"]
+
+
 async def test_forged_session_cookie_returns_401_not_500(client: AsyncClient) -> None:
     """故障注入：伪造 cookie 任何解析失败都按未认证处理，绝不 500。"""
     for forged in ("garbage", "a.b.c", "eyJhbGciOiJIUzI1NiJ9.forged.signature"):
