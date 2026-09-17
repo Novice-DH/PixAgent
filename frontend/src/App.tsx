@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from '@/layouts/RequireAuth'
 import WorkbenchLayout from '@/layouts/WorkbenchLayout'
 import AuthPage from '@/pages/AuthPage'
+import CreatePage from '@/pages/CreatePage'
 import LandingPage from '@/pages/LandingPage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
 
@@ -18,10 +19,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           {/* 工作台：嵌套在左侧导航布局内 */}
           <Route element={<WorkbenchLayout />}>
-            <Route
-              path="/create"
-              element={<PlaceholderPage title="创作" description="一句话生成商品图，后续期次实现。" />}
-            />
+            <Route path="/create" element={<CreatePage />} />
             <Route
               path="/editor"
               element={<PlaceholderPage title="编辑器" description="画布编辑与图层操作，后续期次实现。" />}

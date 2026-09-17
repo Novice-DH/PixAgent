@@ -13,8 +13,15 @@ from sqlalchemy import delete
 from app.db import SessionFactory
 from app.main import app
 from app.models.user import User
+from app.storage import ensure_bucket
 
 TEST_PASSWORD = "test-password-123"
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def _ensure_bucket():
+    """与生产 lifespan 同一路径：session 级保证 bucket 存在（幂等）。"""
+    await ensure_bucket()
 
 
 @pytest.fixture
