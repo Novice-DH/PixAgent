@@ -1,0 +1,35 @@
+# 版本控制与项目文档
+.git
+.gitignore
+docs
+prompts
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# Comet 本机运行时
+.comet
+
+# 依赖与构建产物（镜像内重新安装/构建）
+node_modules
+frontend/dist
+backend/.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+
+# 本地运行时数据
+data
+models
+
+# 编辑器与系统文件
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log

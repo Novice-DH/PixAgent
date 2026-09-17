@@ -1,0 +1,103 @@
+# AI 修图智能体（PixAgent）本地基础设施
+# 默认 `docker compose up -d` 只起三件基础设施；应用服务（app/worker）在 deploy profile，
+# 开发期应用在本机热重载迭代，不进容器。
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: retouch
+      POSTGRES_PASSWORD: retouch_dev
+      POSTGRES_DB: retouch
+    ports:
+      - "7311:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retouch -d retouch"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "7312:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: retouch
+      MINIO_ROOT_PASSWORD: retouch_dev
+    ports:
+      - "7313:9000"
+      - "7314:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ===== 应用服务：默认不启动，`--profile deploy` 时拉起 =====
+  app:
+    build: .
+    image: pixagent-app
+    profiles: ["deploy"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 7302
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://retouch:retouch_dev@postgres:5432/retouch
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      # CV 模型缓存挂点（rembg/rapidocr 等大模型避免部署机重复下载）
+      HF_HOME: /models/huggingface
+      REMBG_HOME: /models/rembg
+    ports:
+      - "7302:7302"
+    volumes:
+      - model_cache:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker:
+    build: .
+    image: pixagent-app
+    profiles: ["deploy"]
+    command: arq app.worker.WorkerSettings
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://retouch:retouch_dev@postgres:5432/retouch
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      HF_HOME: /models/huggingface
+      REMBG_HOME: /models/rembg
+    volumes:
+      - model_cache:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  redis_data:
+  minio_data:
+  model_cache:
