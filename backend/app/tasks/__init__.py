@@ -5,10 +5,10 @@
 
 from collections.abc import Awaitable, Callable
 
-from app.tasks.generate import generate_images
 from app.tasks.ping import ping
+from app.tasks.tools import run_tool
 
 TASKS: dict[str, Callable[..., Awaitable[object]]] = {
     "ping": ping,
-    "generate_images": generate_images,
+    "run_tool": run_tool,
 }
