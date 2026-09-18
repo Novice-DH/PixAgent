@@ -39,6 +39,10 @@ class ToolRun(UUIDBase):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    # 会话内工具调用才有值；创作页直发的生图为 None（常态不是异常，不强造匿名会话）
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("edit_sessions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     tool: Mapped[str] = mapped_column(String(48))
     status: Mapped[RunStatus] = enum_column(RunStatus, default=RunStatus.queued)
     progress: Mapped[int] = mapped_column(Integer, default=0)

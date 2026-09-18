@@ -43,11 +43,17 @@ async def _publish(run: ToolRun) -> None:
 
 
 async def create(
-    session: AsyncSession, user_id: uuid.UUID, tool: str, params: dict[str, Any]
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    tool: str,
+    params: dict[str, Any],
+    session_id: uuid.UUID | None = None,
 ) -> ToolRun:
     run = ToolRun(
         user_id=user_id,
         tool=tool,
+        # 会话内工具调用才有值；创作页直发为 None，产出不进任何图片墙
+        session_id=session_id,
         status=RunStatus.queued,
         progress=0,
         stage="等待开始",

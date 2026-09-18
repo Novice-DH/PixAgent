@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.db import SessionDep
 from app.deps import CurrentUser
+from app.schemas.agent import MessageIn, TurnOut
 from app.schemas.session import (
     HistoryOut,
     SessionCreateIn,
@@ -16,6 +17,7 @@ from app.schemas.session import (
     SessionPatchIn,
     wall_out,
 )
+from app.services import agent as agent_service
 from app.services import sessions
 
 router = APIRouter(tags=["sessions"])
@@ -116,3 +118,36 @@ async def get_session_history(
             status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
         ) from None
     return [HistoryOut.of(row) for row in rows]
+
+
+@router.post(
+    "/sessions/{session_id}/messages",
+    response_model=TurnOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_message(
+    session_id: uuid.UUID, payload: MessageIn, user: CurrentUser, session: SessionDep
+) -> TurnOut:
+    """发一句话：规划失败也是 201，失败信息在 status/error 里——环境故障不抛 503。"""
+    try:
+        record = await sessions.get_for_user(session, user.id, session_id)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    turn = await agent_service.respond(session, record, payload.text.strip())
+    return TurnOut.of(turn)
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[TurnOut])
+async def get_messages(
+    session_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> list[TurnOut]:
+    try:
+        await sessions.get_for_user(session, user.id, session_id)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    rows = await agent_service.turns_of(session, user.id, session_id)
+    return [TurnOut.of(row) for row in rows]
