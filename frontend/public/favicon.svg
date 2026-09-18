@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- 品牌图层标：与 BrandMark.tsx（24 基准）同一几何，本文件为 32 基准等比导出（×4/3），两处须同一提交内同步 -->
   <rect width="32" height="32" rx="8" fill="#171917" />
-  <path d="M16 6l10 5.3-10 5.4-10-5.4L16 6Z" fill="#d9ff6e" />
-  <path d="M6 18.7l10 5.3 10-5.3" fill="none" stroke="#d9ff6e" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" opacity="0.62" />
+  <path d="M16 6L26 11.3333 16 16.6667 6 11.3333 16 6Z" fill="#d9ff6e" />
+  <path d="M6 18.6667l10 5.3333 10-5.3333" fill="none" stroke="#d9ff6e" stroke-width="2.6667" stroke-linecap="round" stroke-linejoin="round" opacity="0.62" />
+  <circle cx="25" cy="6" r="2" fill="#d9ff6e" />
 </svg>

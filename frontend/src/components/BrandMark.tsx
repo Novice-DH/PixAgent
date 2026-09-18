@@ -28,6 +28,7 @@ export default function BrandMark({
             strokeLinejoin="round"
             opacity="0.62"
           />
+          <circle cx="18.75" cy="4.5" r="1.5" fill="var(--color-accent)" />
         </svg>
       </span>
       {withText && <span className="text-base font-semibold tracking-tight">AI 修图智能体</span>}
