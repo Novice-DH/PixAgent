@@ -29,6 +29,7 @@ function merge(snap: Run | undefined, live: RunFrame | null): Run | null {
       stage: live.stage,
       error: live.error,
       candidates: [],
+      prompt: null, // 快照兜底构造：prompt 只来自快照，帧合并不涉及
       created_at: '',
       started_at: null,
       finished_at: null,

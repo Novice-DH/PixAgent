@@ -4,10 +4,8 @@
 图片字节经 MinIO 真实读写（bucket 由 session 夹具保证存在）。
 """
 import struct
-import uuid
 from io import BytesIO
 
-from conftest import TEST_USER_PREFIX
 from PIL import Image
 from sqlalchemy import func, select
 
@@ -136,16 +134,14 @@ async def test_upload_requires_authentication(client) -> None:
     assert response.json()["detail"] == "未登录或会话已过期"
 
 
-async def test_cross_user_isolation_returns_404_and_empty_list(client, credentials) -> None:
+async def test_cross_user_isolation_returns_404_and_empty_list(
+    client, credentials, other_credentials
+) -> None:
     await _register_and_get_client(client, credentials["username"])
     upload = await _upload(client, _png_bytes())
     asset_id = upload.json()["id"]
 
-    other = {
-        "username": f"{TEST_USER_PREFIX}other_{uuid.uuid4().hex[:12]}",
-        "password": credentials["password"],
-    }
-    await _register_and_get_client(client, other["username"])
+    await _register_and_get_client(client, other_credentials["username"])
 
     forbidden = await client.get(f"/api/assets/{asset_id}")
     assert forbidden.status_code == 404

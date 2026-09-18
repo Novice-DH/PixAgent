@@ -60,6 +60,7 @@ class RunOut(BaseModel):
     stage: str
     error: str | None
     candidates: list[CandidateOut]
+    prompt: str | None = None  # 快照字段取自 params.prompt；SSE 帧六字段不变
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -91,6 +92,7 @@ class RunOut(BaseModel):
             stage=run.stage,
             error=run.error,
             candidates=candidates,
+            prompt=run.params.get("prompt"),
             created_at=run.created_at,
             started_at=run.started_at,
             finished_at=run.finished_at,

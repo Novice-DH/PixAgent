@@ -5,6 +5,7 @@ import WorkbenchLayout from '@/layouts/WorkbenchLayout'
 import AuthPage from '@/pages/AuthPage'
 import CandidatesPage from '@/pages/CandidatesPage'
 import CreatePage from '@/pages/CreatePage'
+import EditorPage from '@/pages/EditorPage'
 import LandingPage from '@/pages/LandingPage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
 
@@ -22,10 +23,9 @@ export default function App() {
           <Route element={<WorkbenchLayout />}>
             <Route path="/create" element={<CreatePage />} />
             <Route path="/candidates/:runId" element={<CandidatesPage />} />
-            <Route
-              path="/editor"
-              element={<PlaceholderPage title="编辑器" description="功能开发中" />}
-            />
+            {/* 编辑器双路由：未选会话空态 / 指定会话 */}
+            <Route path="/editor" element={<EditorPage />} />
+            <Route path="/editor/:sessionId" element={<EditorPage />} />
             <Route
               path="/batch"
               element={<PlaceholderPage title="批量处理" description="功能开发中" />}

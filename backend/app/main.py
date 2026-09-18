@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app import queue
 from app.config import get_settings
 from app.events import close_redis
-from app.routers import assets, auth, events, health, runs
+from app.routers import assets, auth, events, health, runs, sessions
 from app.storage import ensure_bucket
 
 settings = get_settings()
@@ -42,6 +42,7 @@ app = FastAPI(
 app.include_router(auth.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
+app.include_router(sessions.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
 # SSE 不挂 /api 前缀
 app.include_router(events.router, prefix="/events")

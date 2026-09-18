@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-from conftest import TEST_USER_PREFIX
 from httpx import AsyncClient
 
 from app import queue
@@ -185,13 +184,14 @@ async def test_create_generation_requires_auth(client: AsyncClient) -> None:
     assert response.json()["detail"] == "未登录或会话已过期"
 
 
-async def test_run_cross_user_returns_404(client: AsyncClient, credentials) -> None:
+async def test_run_cross_user_returns_404(
+    client: AsyncClient, credentials, other_credentials
+) -> None:
     await _register(client, credentials["username"])
     run = await _create_run(client)
 
     async with _second_client() as other:
-        other_name = f"{TEST_USER_PREFIX}{uuid.uuid4().hex[:12]}"
-        await _register(other, other_name)
+        await _register(other, other_credentials["username"])
 
         response = await other.get(f"/api/runs/{run['id']}")
 
@@ -215,13 +215,14 @@ async def test_sse_terminal_run_replays_one_snapshot_and_closes(
     assert frames[0]["progress"] == 100
 
 
-async def test_sse_cross_user_returns_404(client: AsyncClient, credentials) -> None:
+async def test_sse_cross_user_returns_404(
+    client: AsyncClient, credentials, other_credentials
+) -> None:
     await _register(client, credentials["username"])
     run = await _create_run(client)
 
     async with _second_client() as other:
-        other_name = f"{TEST_USER_PREFIX}{uuid.uuid4().hex[:12]}"
-        await _register(other, other_name)
+        await _register(other, other_credentials["username"])
 
         response = await other.get(f"/events/runs/{run['id']}")
 

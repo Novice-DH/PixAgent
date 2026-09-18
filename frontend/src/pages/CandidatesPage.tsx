@@ -1,9 +1,11 @@
-/** 候选页：进度条（SSE 推进）→ 宫格选图 →「进入编辑」。
+/** 候选页：进度条（SSE 推进）→ 宫格选图 →「进入编辑」（建会话直达编辑器）。
  * 状态机：notFound → 失效提示；failed/canceled → 失败原因 + 返回重试；
  * 未终态 → 进度；succeeded → 宫格。刷新恢复靠快照（useRun 双源合并）。 */
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { errorMessage } from '@/hooks/useAuth'
+import { useCreateSession } from '@/hooks/useSessions'
 import type { RunCandidate } from '@/api/runs'
 import { useRun } from '@/hooks/useRun'
 
@@ -15,6 +17,7 @@ export default function CandidatesPage() {
   const navigate = useNavigate()
   const { run, notFound, isPending } = useRun(runId)
   const [picked, setPicked] = useState<string | null>(null)
+  const createSession = useCreateSession()
 
   if (notFound) {
     return (
@@ -94,13 +97,29 @@ export default function CandidatesPage() {
         </div>
         <button
           type="button"
-          disabled={!picked}
-          onClick={() => picked && navigate(`/editor?asset=${picked}`)}
+          disabled={!picked || createSession.isPending}
+          onClick={() => {
+            if (!picked || !run) return
+            // 采用流：选中张建会话（prompt 当标题、全部候选进图片墙），成功直达编辑器
+            createSession.mutate(
+              {
+                current_asset_id: picked,
+                asset_ids: run.candidates.map((candidate) => candidate.id),
+                title: run.prompt ?? undefined,
+              },
+              { onSuccess: (detail) => navigate(`/editor/${detail.id}`) },
+            )
+          }}
           className="rounded-control bg-brand px-4 py-2 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:opacity-50"
         >
-          进入编辑
+          {createSession.isPending ? '正在创建会话…' : '进入编辑'}
         </button>
       </header>
+      {createSession.error && (
+        <p role="alert" className="text-sm text-danger">
+          {errorMessage(createSession.error)}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {run.candidates.map((candidate, index) => (
