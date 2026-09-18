@@ -1,10 +1,16 @@
-/** 素材卡片：懒加载缩略图 + 透明底角标 + 解码元数据。 */
+/** 素材卡片：懒加载缩略图 + 透明底角标 + 解码元数据。
+ * 传入 onSelect 时整卡可点（创作页用于建会话进编辑器）；展示组件不持有路由跳转。 */
 import type { Asset } from '@/api/assets'
 import { formatBytes, formatDateTime } from '@/lib/format'
 
-export default function AssetCard({ asset }: { asset: Asset }) {
-  return (
-    <figure className="overflow-hidden rounded-card border border-line bg-paper shadow-card">
+interface AssetCardProps {
+  asset: Asset
+  onSelect?: (asset: Asset) => void
+}
+
+export default function AssetCard({ asset, onSelect }: AssetCardProps) {
+  const body = (
+    <>
       <div className="relative bg-canvas">
         <img
           src={asset.url}
@@ -27,6 +33,24 @@ export default function AssetCard({ asset }: { asset: Asset }) {
         </span>
         <span>{formatDateTime(asset.created_at)}</span>
       </figcaption>
+    </>
+  )
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(asset)}
+        className="block w-full overflow-hidden rounded-card border border-line bg-paper text-left shadow-card transition-colors hover:border-brand"
+      >
+        {body}
+      </button>
+    )
+  }
+
+  return (
+    <figure className="overflow-hidden rounded-card border border-line bg-paper shadow-card">
+      {body}
     </figure>
   )
 }

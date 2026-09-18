@@ -1,5 +1,6 @@
 /** 创作页：生成表单置顶（消费落地页草稿）+ 已有图片上传 + 素材墙。
- * 提交成功后清空草稿并跳转候选页——任务入口就是这次跳转。 */
+ * 提交成功后清空草稿并跳转候选页——任务入口就是这次跳转；
+ * 上传与素材卡点击是另一条入口：直接建会话进编辑器。 */
 import { useNavigate } from 'react-router-dom'
 
 import AssetCard from '@/components/AssetCard'
@@ -7,6 +8,7 @@ import GenerateForm from '@/components/GenerateForm'
 import ImageDropzone from '@/components/ImageDropzone'
 import { errorMessage } from '@/hooks/useAuth'
 import { useAssets, useUploadAsset } from '@/hooks/useAssets'
+import { useCreateSession } from '@/hooks/useSessions'
 import { useGenerate } from '@/hooks/useRun'
 import { readPromptDraft, writePromptDraft } from '@/lib/promptDraft'
 
@@ -15,8 +17,16 @@ export default function CreatePage() {
   const assetsQuery = useAssets()
   const upload = useUploadAsset()
   const generate = useGenerate()
+  const createSession = useCreateSession()
 
   const assets = assetsQuery.data ?? []
+
+  const enterEditor = (assetId: string) => {
+    createSession.mutate(
+      { current_asset_id: assetId },
+      { onSuccess: (detail) => navigate(`/editor/${detail.id}`) },
+    )
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8">
@@ -49,14 +59,26 @@ export default function CreatePage() {
 
       <section>
         <h2 className="mb-3 text-base font-medium">上传已有图片</h2>
-        <ImageDropzone disabled={upload.isPending} onFile={(file) => upload.mutate(file)} />
+        <ImageDropzone
+          disabled={upload.isPending || createSession.isPending}
+          onFile={(file) =>
+            upload.mutate(file, {
+              onSuccess: (asset) => enterEditor(asset.id),
+            })
+          }
+        />
         {upload.error && (
           <p role="alert" className="mt-2 text-sm text-danger">
             {errorMessage(upload.error)}
           </p>
         )}
-        {upload.isSuccess && (
-          <p className="mt-2 text-sm text-success">上传成功，已加入素材墙。</p>
+        {createSession.error && (
+          <p role="alert" className="mt-2 text-sm text-danger">
+            {errorMessage(createSession.error)}
+          </p>
+        )}
+        {createSession.isPending && (
+          <p className="mt-2 text-sm text-muted">正在创建编辑会话…</p>
         )}
       </section>
 
@@ -74,7 +96,11 @@ export default function CreatePage() {
         {assets.length > 0 && (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
             {assets.map((asset) => (
-              <AssetCard key={asset.id} asset={asset} />
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                onSelect={createSession.isPending ? undefined : (picked) => enterEditor(picked.id)}
+              />
             ))}
           </div>
         )}

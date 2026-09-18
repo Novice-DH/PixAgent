@@ -42,6 +42,8 @@ export interface Run {
   stage: string
   error: string | null
   candidates: RunCandidate[]
+  /** 快照字段取自生成入参，候选页拿它当会话标题；SSE 帧六字段不变 */
+  prompt: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null
