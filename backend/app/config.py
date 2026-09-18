@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     image_provider: str = "mock"
     dashscope_api_key: str = ""
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com"
 
     text_to_image_model: str = "qwen-image-3.0-pro"
     image_edit_model: str = "qwen-image-edit-max"

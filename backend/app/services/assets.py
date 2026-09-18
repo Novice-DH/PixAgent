@@ -13,7 +13,14 @@ from app.services.images import probe
 from app.storage import put_object
 
 
-async def create_from_bytes(session: AsyncSession, user_id: uuid.UUID, data: bytes) -> Asset:
+async def create_from_bytes(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    data: bytes,
+    kind: AssetKind = AssetKind.original,
+    source: AssetSource = AssetSource.upload,
+) -> Asset:
+    """默认行为是用户上传；生成结果复用同一条落库链路（kind=generated、source=generate）。"""
     meta = probe(data)
     asset_id = uuid.uuid4()
     storage_key = f"users/{user_id}/{asset_id}.{meta.extension}"
@@ -21,8 +28,8 @@ async def create_from_bytes(session: AsyncSession, user_id: uuid.UUID, data: byt
     asset = Asset(
         id=asset_id,
         user_id=user_id,
-        kind=AssetKind.original,
-        source=AssetSource.upload,
+        kind=kind,
+        source=source,
         storage_key=storage_key,
         image_format=meta.image_format,
         width=meta.width,
