@@ -80,7 +80,12 @@ async def execute(session: AsyncSession, run: ToolRun) -> None:
         await _record(session, run, result)
         await runs.finish_succeeded(session, run, result)
     except (ProviderError, UnknownTool) as error:
-        await runs.finish_failed(session, run, str(error))
+        # 与未预期分支同款先回滚再落终态：外壳是全工具共用的，不能假设 handler
+        # 抛明确异常时没留脏状态——rollback 后按主键重载，错误信息保留原文
+        await session.rollback()
+        fresh = await runs.load(session, run_id)
+        if fresh is not None and not fresh.status.is_terminal:
+            await runs.finish_failed(session, fresh, str(error))
     except Exception:
         # 未预期异常：细节只进日志，对外统一话术——堆栈不该出现在 UI
         logger.exception("工具执行未预期失败 run=%s tool=%s", run_id, tool)

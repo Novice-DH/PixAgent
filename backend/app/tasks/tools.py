@@ -29,13 +29,15 @@ async def run_tool(ctx: dict, run_id: str) -> None:
             # job_timeout 以 task.cancel() 实现（BaseException，execute 的 except Exception
             # 接不住）。不落终态的话：run 卡在 running，重投时终态短路失效 → 二次执行。
             # rollback 会过期 ORM 实例，重载必须用任务参数而非 run.id（同步访问过期
-            # 属性会触发隐式刷新，在 AsyncSession 下抛 MissingGreenlet）。
+            # 属性会触发隐式刷新，在 AsyncSession 下抛 MissingGreenlet）；
+            # shield 覆盖重载+落终态整段——二次 cancel 不能打断收尾。
+            async def _terminate_failed() -> None:
+                fresh = await runs.load(session, uuid.UUID(run_id))
+                if fresh is not None and not fresh.status.is_terminal:
+                    await runs.finish_failed(session, fresh, tools.EXECUTION_FAILURE_MESSAGE)
+
             await session.rollback()
-            fresh = await runs.load(session, uuid.UUID(run_id))
-            if fresh is not None and not fresh.status.is_terminal:
-                await asyncio.shield(
-                    runs.finish_failed(session, fresh, tools.EXECUTION_FAILURE_MESSAGE)
-                )
+            await asyncio.shield(_terminate_failed())
             raise
         except Exception:
             # 兜底：execute 内部已两级分类，走到这里说明分类过程本身故障（如终态落库失败）。
