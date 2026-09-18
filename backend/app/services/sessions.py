@@ -5,6 +5,7 @@
 CRUD 事务，不碰 Redis 与队列：Redis 停机不影响会话可用性。
 """
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -95,6 +96,34 @@ async def history_of(
         .order_by(EditHistory.seq.desc())
     )
     return list(result.scalars())
+
+
+async def load(session: AsyncSession, session_id: uuid.UUID) -> EditSession:
+    """Worker 侧按 id 加载：任务已持有归属上下文，无需 user 条件（对齐 runs.load）。"""
+    row = await session.scalar(select(EditSession).where(EditSession.id == session_id))
+    if row is None:
+        raise SessionNotFound
+    return row
+
+
+async def record_result(
+    session: AsyncSession,
+    row: EditSession,
+    *,
+    action: str,
+    params: dict[str, Any],
+    result: dict[str, Any],
+    asset_ids: Sequence[uuid.UUID] = (),
+) -> None:
+    """会话内工具产出留痕单点：并入图片墙 + 追加编辑记录，同一个事务落定。
+
+    不切当前图——current_asset_id / document / revision 均不动：工具说"改好了"
+    就换图等于夺走用户的否决权，采用动作永远是显式的（点图片墙）。
+    """
+    for asset_id in asset_ids:
+        await _add_to_wall(session, row, asset_id)
+    await _append_history(session, row.user_id, row.id, action, params, result)
+    await session.commit()
 
 
 async def _append_history(

@@ -5,17 +5,17 @@ Revises: 6b99ef3c52c5
 Create Date: 2026-09-18 05:29:09.703027
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '47626d292c78'
-down_revision: Union[str, None] = '6b99ef3c52c5'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '6b99ef3c52c5'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -23,7 +23,14 @@ def upgrade() -> None:
     op.create_table('tool_runs',
     sa.Column('user_id', sa.Uuid(), nullable=False),
     sa.Column('tool', sa.String(length=48), nullable=False),
-    sa.Column('status', sa.Enum('queued', 'running', 'succeeded', 'failed', 'canceled', name='runstatus', native_enum=False, length=16), nullable=False),
+    sa.Column(
+        'status',
+        sa.Enum(
+            'queued', 'running', 'succeeded', 'failed', 'canceled',
+            name='runstatus', native_enum=False, length=16,
+        ),
+        nullable=False,
+    ),
     sa.Column('progress', sa.Integer(), nullable=False),
     sa.Column('stage', sa.String(length=64), nullable=False),
     sa.Column('params', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
@@ -33,7 +40,9 @@ def upgrade() -> None:
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column(
+        'created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False
+    ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

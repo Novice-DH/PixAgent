@@ -60,7 +60,7 @@ async def _run_task(run_id: str) -> None:
     """直呼任务函数：与 Worker 执行同一入口，不经队列。"""
     from app.tasks import TASKS
 
-    await TASKS["generate_images"]({}, run_id)
+    await TASKS["run_tool"]({}, run_id)
 
 
 async def _read_sse_frames(client: AsyncClient, run_id: str) -> list[dict]:
@@ -124,8 +124,15 @@ async def test_terminal_run_retask_does_not_duplicate(
 async def test_task_fallback_marks_failed_when_execution_crashes(
     client: AsyncClient, credentials, monkeypatch
 ) -> None:
-    """兜底落败：执行崩溃 → rollback → 经任务参数重载落 FAILED（订阅方不空等）。"""
-    from app.services import generation
+    """兜底落败：执行崩溃 → rollback → 经任务参数重载落 FAILED（订阅方不空等）。
+
+    monkeypatch 目标是 app.services.tools 命名空间下的 spec 解析——注册表的
+    handler 绑定发生在 import 期，patch 生成服务原模块无效。
+    """
+    from dataclasses import replace
+
+    from app.services import tools
+    from app.tools import spec_of as real_spec_of
 
     await _register(client, credentials["username"])
     run = await _create_run(client)
@@ -133,12 +140,15 @@ async def test_task_fallback_marks_failed_when_execution_crashes(
     async def explode(session, run):
         raise RuntimeError("模拟未预期崩溃")
 
-    monkeypatch.setattr(generation, "execute", explode)
+    def broken_spec(name: str):
+        return replace(real_spec_of(name), handler=explode)
+
+    monkeypatch.setattr(tools, "spec_of", broken_spec)
     await _run_task(run["id"])
 
     updated = (await client.get(f"/api/runs/{run['id']}")).json()
     assert updated["status"] == "failed"
-    assert updated["error"] == "生成失败，请重试"
+    assert updated["error"] == "执行失败，请重试"
 
 
 @pytest.mark.parametrize(

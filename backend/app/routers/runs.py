@@ -1,15 +1,17 @@
-"""生图任务路由：协议与状态码翻译；受理只做校验、落 run、投队列三件事。"""
+"""生图任务路由：协议与状态码翻译；受理只做校验、落 run、投队列三件事。
+
+受理改经 tools.submit（统一通道）；Redis 故障仍翻 503——环境故障用状态码表达。
+"""
 import uuid
 
 import redis.exceptions
 from fastapi import APIRouter, HTTPException, status
 
-from app import queue
 from app.db import SessionDep
 from app.deps import CurrentUser
 from app.schemas.run import GenerateIn, RunOut
 from app.services import assets as assets_service
-from app.services import runs
+from app.services import runs, tools
 
 router = APIRouter(tags=["runs"])
 
@@ -32,8 +34,13 @@ async def create_generation(
             )
 
     try:
-        run = await runs.create(session, user.id, GENERATE_TOOL, payload.to_params())
-        await queue.enqueue("generate_images", run.id)
+        run = await tools.submit(session, user.id, GENERATE_TOOL, payload.to_params())
+    except tools.InvalidParams as error:
+        # 注册表校验与 FastAPI 的 GenerateIn 解析同一份 params 模型（一模两用）；
+        # 走到这里说明两界出现漂移，兜一层 422 而不是 500
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from None
     except redis.exceptions.RedisError:
         # 队列不可达是环境故障而非用户错误：503 而不是 500，API 进程不崩
         raise HTTPException(

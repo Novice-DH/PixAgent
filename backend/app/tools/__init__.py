@@ -1,0 +1,26 @@
+"""工具注册表：三界契约的单一来源。
+
+新增工具只改两处：写一个 spec 模块 + 在 SPECS 加一行；
+校验（services.tools.validate）、模型签名（agent.llm）、
+前端面板（后续期）都从这份元组生成。
+"""
+from app.tools.base import ToolSpec, UnknownTool
+from app.tools.generate import GENERATE_IMAGE
+
+SPECS: tuple[ToolSpec, ...] = (GENERATE_IMAGE,)
+
+
+def spec_of(name: str) -> ToolSpec:
+    """未知名抛 UnknownTool——模型幻觉出的工具名在这里被挡下。"""
+    for spec in SPECS:
+        if spec.name == name:
+            return spec
+    raise UnknownTool(name)
+
+
+def label_of(name: str) -> str:
+    """注册表文案；未知名回退原名（落库的 tool 字符串永远可读）。"""
+    try:
+        return spec_of(name).label
+    except UnknownTool:
+        return name

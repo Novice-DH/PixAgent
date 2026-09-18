@@ -18,6 +18,11 @@ dependencies = [
     "bcrypt>=4.2",
     "pyjwt>=2.9",
     "httpx>=0.27",
+    # agent 依赖升主（S9 一次性矫正）：API 进程经 路由→服务→agent 包 import langgraph；
+    # 镜像 uv sync --frozen 不带 --extra，留在可选组会让线上启动即崩。
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
+    "langchain-openai>=0.2",
 ]
 
 [project.optional-dependencies]

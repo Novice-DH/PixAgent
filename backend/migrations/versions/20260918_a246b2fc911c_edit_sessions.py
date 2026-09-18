@@ -5,17 +5,17 @@ Revises: 47626d292c78
 Create Date: 2026-09-18 21:18:12.389714
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'a246b2fc911c'
-down_revision: Union[str, None] = '47626d292c78'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '47626d292c78'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,9 +27,13 @@ def upgrade() -> None:
     sa.Column('current_asset_id', sa.Uuid(), nullable=False),
     sa.Column('revision', sa.Integer(), nullable=False),
     sa.Column('document', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column(
+        'updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False
+    ),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column(
+        'created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False
+    ),
     sa.ForeignKeyConstraint(['current_asset_id'], ['assets.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['original_asset_id'], ['assets.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -44,13 +48,17 @@ def upgrade() -> None:
     sa.Column('params', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('result', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column(
+        'created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False
+    ),
     sa.ForeignKeyConstraint(['session_id'], ['edit_sessions.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('session_id', 'seq', name='uq_edit_history_session_seq')
     )
-    op.create_index(op.f('ix_edit_history_session_id'), 'edit_history', ['session_id'], unique=False)
+    op.create_index(
+        op.f('ix_edit_history_session_id'), 'edit_history', ['session_id'], unique=False
+    )
     op.create_index(op.f('ix_edit_history_user_id'), 'edit_history', ['user_id'], unique=False)
     op.create_table('session_assets',
     sa.Column('session_id', sa.Uuid(), nullable=False),
