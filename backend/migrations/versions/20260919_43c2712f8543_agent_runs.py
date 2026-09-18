@@ -5,17 +5,17 @@ Revises: a246b2fc911c
 Create Date: 2026-09-19 02:41:28.168485
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '43c2712f8543'
-down_revision: Union[str, None] = 'a246b2fc911c'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = 'a246b2fc911c'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,10 +27,19 @@ def upgrade() -> None:
     sa.Column('goal', sa.Text(), nullable=False),
     sa.Column('reply', sa.Text(), nullable=False),
     sa.Column('plan', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('status', sa.Enum('queued', 'running', 'succeeded', 'failed', 'canceled', name='runstatus', native_enum=False, length=16), nullable=False),
+    sa.Column(
+        'status',
+        sa.Enum(
+            'queued', 'running', 'succeeded', 'failed', 'canceled',
+            name='runstatus', native_enum=False, length=16,
+        ),
+        nullable=False,
+    ),
     sa.Column('error', sa.Text(), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column(
+        'created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False
+    ),
     sa.ForeignKeyConstraint(['session_id'], ['edit_sessions.id'],
                            name='fk_agent_runs_session_id_edit_sessions', ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'],

@@ -6,7 +6,6 @@ trust_env=False：避免代理环境变量劫持本地请求。
 """
 import json
 import sys
-import uuid
 
 import httpx
 
