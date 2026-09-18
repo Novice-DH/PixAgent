@@ -61,10 +61,11 @@ export interface HistoryEntry {
   created_at: string
 }
 
-/** 编辑动作中文案（编辑记录用；后续工具期追加动作即扩此表）。 */
+/** 编辑动作中文案（编辑记录用；与后端注册表 label 手工同步，前端工具面板期整体删除）。 */
 export const ACTION_LABELS: Record<string, string> = {
   create_session: '新建会话',
   switch_current: '切换当前图',
+  generate_image: '生成图片',
 }
 
 export function actionLabel(action: string): string {
