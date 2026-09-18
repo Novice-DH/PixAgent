@@ -3,7 +3,7 @@
 会话指向资产用 RESTRICT——画布正指着这张图，资产不许静默消失；
 删用户才级联清会话，删会话才级联清墙。级联方向 = 依赖方向。
 session_assets 是"全模型 UUIDBase"惯例的显式例外：自然键 (session_id, asset_id)
-已经唯一，代理 UUID 列只会多一个索引和一次 join 间接（纯关联表豁免，已回写 FACTS）。
+已经唯一，代理 UUID 列只会多一个索引和一次 join 间接（纯关联表豁免，例外已记录在 PROJECT_FACTS）。
 """
 import uuid
 from datetime import datetime

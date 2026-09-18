@@ -103,6 +103,16 @@ async def test_create_session_blank_title_becomes_default(client, credentials, t
     assert response.json()["title"] == DEFAULT_TITLE
 
 
+async def test_create_session_title_truncated_to_80(client, credentials) -> None:
+    await _register_and_get_client(client, credentials["username"])
+    asset_id = (await _upload(client, _png_bytes())).json()["id"]
+
+    response = await _create_session(client, current=asset_id, title="长" * 100)
+
+    assert response.status_code == 201
+    assert response.json()["title"] == "长" * 80
+
+
 async def test_create_session_unknown_current_asset_returns_404(client, credentials) -> None:
     await _register_and_get_client(client, credentials["username"])
 
