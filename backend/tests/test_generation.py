@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
+from conftest import TEST_USER_PREFIX
 from httpx import AsyncClient
 
 from app import queue
@@ -189,7 +190,7 @@ async def test_run_cross_user_returns_404(client: AsyncClient, credentials) -> N
     run = await _create_run(client)
 
     async with _second_client() as other:
-        other_name = f"u_{uuid.uuid4().hex[:12]}"
+        other_name = f"{TEST_USER_PREFIX}{uuid.uuid4().hex[:12]}"
         await _register(other, other_name)
 
         response = await other.get(f"/api/runs/{run['id']}")
@@ -219,7 +220,7 @@ async def test_sse_cross_user_returns_404(client: AsyncClient, credentials) -> N
     run = await _create_run(client)
 
     async with _second_client() as other:
-        other_name = f"u_{uuid.uuid4().hex[:12]}"
+        other_name = f"{TEST_USER_PREFIX}{uuid.uuid4().hex[:12]}"
         await _register(other, other_name)
 
         response = await other.get(f"/events/runs/{run['id']}")

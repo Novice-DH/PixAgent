@@ -87,7 +87,7 @@ async def test_invalid_username_returns_422(client: AsyncClient) -> None:
 async def test_over_72_bytes_password_returns_422_not_500(client: AsyncClient) -> None:
     """多字节密码可同时满足"6–64 位"却超 bcrypt 72 字节上限，必须 422 而非 500。"""
     response = await client.post(
-        "/api/auth/register", json={"username": "byte_limit_user", "password": "密" * 30}
+        "/api/auth/register", json={"username": "test_byte_limit_user", "password": "密" * 30}
     )
     assert response.status_code == 422
     assert "72" in response.json()["detail"][0]["msg"]
