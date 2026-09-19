@@ -40,8 +40,9 @@ export default function AssetCard({ asset, onSelect }: AssetCardProps) {
     return (
       <button
         type="button"
+        title="点击选用这张素材"
         onClick={() => onSelect(asset)}
-        className="block w-full overflow-hidden rounded-card border border-line bg-paper text-left shadow-card transition-colors hover:border-brand"
+        className="block w-full overflow-hidden rounded-card border border-line bg-paper text-left shadow-card transition-[border-color,transform] duration-150 hover:border-brand active:scale-[0.99]"
       >
         {body}
       </button>

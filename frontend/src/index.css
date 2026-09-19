@@ -38,7 +38,12 @@
   --shadow-panel: 0 28px 72px -26px rgb(20 26 20 / 0.3);
 
   /* 动效 */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-rise: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-out: fade-out 0.18s ease-out both;
+  --animate-slide-in: slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.22s ease-out both;
 
   @keyframes rise {
     from {
@@ -48,6 +53,42 @@
     to {
       opacity: 1;
       transform: none;
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translate3d(16px, 0, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
     }
   }
 }
@@ -76,6 +117,23 @@
   mask-image: radial-gradient(ellipse 110% 85% at 50% 0%, black 35%, transparent 78%);
 }
 
+/* 细滚动条：面板与横向滚动区（LayerPanel / 图片墙 / 对话区） */
+@utility scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+  &::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--color-line-strong);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
 @layer base {
   body {
     @apply bg-canvas text-ink font-sans antialiased;
@@ -84,6 +142,68 @@
   :focus-visible {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
+  }
+
+  /* 滑杆皮肤：细轨道 + 浮起滑块，hover/active 放大反馈（webkit 与 moz 双前缀） */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 999px;
+    background: var(--color-line-strong);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    margin-top: -5.5px;
+    height: 14px;
+    width: 14px;
+    border-radius: 999px;
+    background: var(--color-paper);
+    border: 1.5px solid var(--color-brand);
+    box-shadow: 0 1px 4px rgb(20 26 20 / 0.25);
+    transition:
+      transform 0.15s var(--ease-soft),
+      box-shadow 0.15s var(--ease-soft);
+  }
+  input[type="range"]:hover::-webkit-slider-thumb {
+    transform: scale(1.12);
+  }
+  input[type="range"]:active::-webkit-slider-thumb {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand) 18%, transparent);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 3px;
+    border-radius: 999px;
+    background: var(--color-line-strong);
+  }
+  input[type="range"]::-moz-range-thumb {
+    height: 12px;
+    width: 12px;
+    border-radius: 999px;
+    background: var(--color-paper);
+    border: 1.5px solid var(--color-brand);
+    box-shadow: 0 1px 4px rgb(20 26 20 / 0.25);
+    transition:
+      transform 0.15s var(--ease-soft),
+      box-shadow 0.15s var(--ease-soft);
+  }
+  input[type="range"]:hover::-moz-range-thumb {
+    transform: scale(1.12);
+  }
+  input[type="range"]:active::-moz-range-thumb {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand) 18%, transparent);
   }
 
   /* 动效是增强不是必需：前庭敏感用户的系统偏好优先于编排 */

@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
 import BrandMark from '@/components/BrandMark'
+import ToastHost from '@/components/ToastHost'
 import { useAuthActions, useCurrentUser } from '@/hooks/useAuth'
 
 const NAV_ITEMS = [
@@ -37,54 +38,58 @@ const NAV_ITEMS = [
   },
 ]
 
-/** 工作台布局：左侧导航默认 w-16 仅图标，悬停展开 w-52 显示文字；底部为登出按钮。 */
+/** 工作台布局：左侧导航外壳固定 w-16 仅图标，悬停展开为绝对定位内层（w-52 显示文字）——
+ * 展开叠在内容之上不挤压 main（覆盖式布局，画布内容静止）；底部挂全局 ToastHost。 */
 export default function WorkbenchLayout() {
   const { data: user } = useCurrentUser()
   const { logout } = useAuthActions()
 
   return (
     <div className="flex min-h-screen">
-      <nav className="group flex w-16 flex-col gap-2 overflow-hidden border-r border-line bg-paper p-3 transition-[width] duration-200 hover:w-52">
-        {/* 品牌区：与落地页同一 BrandMark 单点，随侧栏展开显示文字 */}
-        <div className="mb-1 flex items-center gap-3 border-b border-line px-2.5 pb-3">
-          <BrandMark size="sm" />
-          <span className="whitespace-nowrap text-sm font-semibold opacity-0 transition-opacity group-hover:opacity-100">
-            AI 修图智能体
-          </span>
-        </div>
-
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className="flex items-center gap-3 rounded-control px-2.5 py-2 text-sm text-muted hover:bg-brand-soft hover:text-brand-strong aria-[current=page]:bg-brand-soft aria-[current=page]:text-brand-strong"
-          >
-            <span className="h-5 w-5 shrink-0">{item.icon}</span>
-            <span className="whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100">
-              {item.label}
+      <nav className="group relative w-16 shrink-0">
+        <div className="absolute inset-y-0 left-0 z-40 flex w-16 flex-col gap-2 overflow-hidden border-r border-line bg-paper p-3 transition-[width,box-shadow] duration-200 ease-soft group-hover:w-52 group-hover:shadow-panel">
+          {/* 品牌区：与落地页同一 BrandMark 单点，随侧栏展开显示文字 */}
+          <div className="mb-1 flex items-center gap-3 border-b border-line px-2.5 pb-3">
+            <BrandMark size="sm" />
+            <span className="whitespace-nowrap text-sm font-semibold opacity-0 transition-opacity group-hover:opacity-100">
+              AI 修图智能体
             </span>
-          </NavLink>
-        ))}
+          </div>
 
-        {/* 登出：头像圈显示用户名首字母，悬停随导航一起展开文字 */}
-        <button
-          type="button"
-          onClick={() => logout.mutate()}
-          disabled={logout.isPending}
-          title="退出登录"
-          className="mt-auto flex items-center gap-3 rounded-control px-2.5 py-2 text-sm text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-60"
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-semibold text-brand-strong">
-            {user ? user.username.charAt(0).toUpperCase() : '·'}
-          </span>
-          <span className="whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100">
-            {logout.isPending ? '正在退出…' : '退出登录'}
-          </span>
-        </button>
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className="flex items-center gap-3 rounded-control px-2.5 py-2 text-sm text-muted hover:bg-brand-soft hover:text-brand-strong aria-[current=page]:bg-brand-soft aria-[current=page]:text-brand-strong"
+            >
+              <span className="h-5 w-5 shrink-0">{item.icon}</span>
+              <span className="whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100">
+                {item.label}
+              </span>
+            </NavLink>
+          ))}
+
+          {/* 登出：头像圈显示用户名首字母，悬停随导航一起展开文字 */}
+          <button
+            type="button"
+            onClick={() => logout.mutate()}
+            disabled={logout.isPending}
+            title="退出登录"
+            className="mt-auto flex items-center gap-3 rounded-control px-2.5 py-2 text-sm text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-60"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-semibold text-brand-strong">
+              {user ? user.username.charAt(0).toUpperCase() : '·'}
+            </span>
+            <span className="whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100">
+              {logout.isPending ? '正在退出…' : '退出登录'}
+            </span>
+          </button>
+        </div>
       </nav>
       <main className="min-w-0 flex-1">
         <Outlet />
       </main>
+      <ToastHost />
     </div>
   )
 }

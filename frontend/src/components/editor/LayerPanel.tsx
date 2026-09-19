@@ -1,11 +1,15 @@
 /** 右栏面板：图层（选择/变换/排序）与调色（11 滑杆）互斥切换（editorUi.panel）。
- * 滑杆纪律：本地 draft，onPointerUp 才提交——拖动过程不发请求；
+ * 画布右侧浮层（绝对定位 + 滑入动画），开合不推动画布。
+ * 滑杆协议：onInput 拖动实时驱动画布预览，onCommit 松手/键盘/双击复位落库；
+ * 指针捕获 + lostpointercapture 兜底——拖出控件松手必提交；label 双击复位 origin。
+ * 预览是渲染态：文档回传新值即撤（value 变化的 effect），失败/切层/切面板/卸载兜底清空。
  * 调色应用后表单值清空，避免"上次数值残留再应用"。 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { actionLabel } from '@/api/sessions'
 import type { SessionDetail } from '@/api/sessions'
 import { formatBytes, formatDateTime } from '@/lib/format'
+import { ADJUST_PREVIEW_KEYS, type AdjustPreviewValues } from '@/lib/adjustPreview'
 import { useEditorUi } from '@/stores/editorUi'
 
 /** 与 useSessionTools 返回形态对齐的最小面（避免整包导入）。 */
@@ -35,17 +39,31 @@ const ADJUST_FIELDS = [
   { key: 'vignette', label: '晕影', min: 0 },
 ] as const
 
-type AdjustDraft = Partial<Record<(typeof ADJUST_FIELDS)[number]['key'], number>>
+type AdjustKey = (typeof ADJUST_FIELDS)[number]['key']
+type AdjustDraft = Partial<Record<AdjustKey, number>>
 
 const EMPTY_DRAFT: AdjustDraft = {}
 
-function Slider({
+const toPreviewValues = (draft: AdjustDraft): AdjustPreviewValues => {
+  const values = {} as AdjustPreviewValues
+  for (const key of ADJUST_PREVIEW_KEYS) {
+    values[key] = draft[key] ?? 0
+  }
+  return values
+}
+
+/** 滑杆：onInput 拖动实时（驱动预览），onCommit 落库。提交时机=lostpointercapture
+ * （指针捕获下拖出控件松手仍触发，onPointerUp 兜底）；键盘调节松开按键即提交；
+ * label 双击复位 origin。step ≥ 1 显示整数，否则两位小数。 */
+function SliderField({
   label,
   min,
   max,
   step,
   value,
+  origin,
   disabled,
+  onInput,
   onCommit,
 }: {
   label: string
@@ -53,18 +71,45 @@ function Slider({
   max: number
   step: number
   value: number
+  origin: number
   disabled: boolean
+  onInput: (value: number) => void
   onCommit: (value: number) => void
 }) {
   const [draft, setDraft] = useState(value)
   const [lastValue, setLastValue] = useState(value)
+  // 指针交互提交闸：一次拖动只提交一次（pointerup 与 lostpointercapture 双触发兜底）
+  const commitGateRef = useRef(true)
   if (lastValue !== value) {
     setLastValue(value)
     setDraft(value)
   }
+
+  const commitViaPointer = (next: number) => {
+    if (commitGateRef.current) return
+    commitGateRef.current = true
+    if (next !== value) onCommit(next)
+  }
+
+  const commitDirect = (next: number) => {
+    if (next !== value) onCommit(next)
+  }
+
   return (
-    <label className="flex items-center gap-2 text-xs">
-      <span className="w-16 shrink-0 text-muted">{label}</span>
+    <div className="flex items-center gap-2 text-xs">
+      <span
+        role="button"
+        tabIndex={-1}
+        title={`双击「${label}」复位`}
+        onDoubleClick={() => {
+          setDraft(origin)
+          onInput(origin)
+          commitDirect(origin)
+        }}
+        className="w-16 shrink-0 cursor-pointer select-none text-muted"
+      >
+        {label}
+      </span>
       <input
         type="range"
         min={min}
@@ -72,14 +117,25 @@ function Slider({
         step={step}
         value={draft}
         disabled={disabled}
-        onChange={(event) => setDraft(Number(event.target.value))}
-        onPointerUp={() => {
-          if (draft !== value) onCommit(draft)
+        aria-label={label}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          commitGateRef.current = false
         }}
-        className="h-1 min-w-0 flex-1 accent-brand disabled:opacity-40"
+        onPointerUp={(event) => commitViaPointer(Number(event.currentTarget.value))}
+        onLostPointerCapture={(event) => commitViaPointer(Number(event.currentTarget.value))}
+        onChange={(event) => {
+          const next = Number(event.target.value)
+          setDraft(next)
+          onInput(next)
+        }}
+        onKeyUp={() => commitDirect(draft)}
+        className="h-4 min-w-0 flex-1"
       />
-      <span className="w-10 shrink-0 text-right text-ink tabular-nums">{draft.toFixed(2)}</span>
-    </label>
+      <span className="w-10 shrink-0 text-right text-ink tabular-nums">
+        {draft.toFixed(step >= 1 ? 0 : 2)}
+      </span>
+    </div>
   )
 }
 
@@ -88,7 +144,10 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
   const setPanel = useEditorUi((state) => state.setPanel)
   const selectedLayerId = useEditorUi((state) => state.selectedLayerId)
   const selectLayer = useEditorUi((state) => state.selectLayer)
+  const setAdjustPreview = useEditorUi((state) => state.setAdjustPreview)
+  const setLayerPreview = useEditorUi((state) => state.setLayerPreview)
   const [adjustDraft, setAdjustDraft] = useState<AdjustDraft>(EMPTY_DRAFT)
+  const busyRef = useRef(tools.busy)
 
   // 默认选中层表最后一层（视觉最前）；图层增减后若选中层不存在则回落
   const layers = detail.document.layers
@@ -105,10 +164,55 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
   const busy = tools.busy
   const currentAsset = detail.wall.find((entry) => entry.asset.id === detail.current_asset_id)?.asset
 
+  // 预览生命周期：文档回传新值即撤——变换三要素任一变化的 effect 显式关闭
+  const selectedValueKey = selected
+    ? `${selected.id}:${selected.opacity}:${selected.transform.rotation}:${Math.abs(selected.transform.scale_x)}`
+    : null
+  useEffect(() => {
+    setLayerPreview(null)
+  }, [selectedValueKey, setLayerPreview])
+
+  // 兜底撤预览：一轮交互结束（busy 落下）但文档没变（失败/无可撤）时不留残影
+  useEffect(() => {
+    if (busyRef.current && !busy) {
+      setLayerPreview(null)
+    }
+    busyRef.current = busy
+  }, [busy, setLayerPreview])
+
+  // 切页签只保留当前页签的预览；卸载全部清空
+  useEffect(() => {
+    if (panel === 'adjust') {
+      setLayerPreview(null)
+    } else {
+      setAdjustPreview(null)
+    }
+  }, [panel, setLayerPreview, setAdjustPreview])
+  useEffect(
+    () => () => {
+      setLayerPreview(null)
+      setAdjustPreview(null)
+    },
+    [setLayerPreview, setAdjustPreview],
+  )
+
   const invokeWithLayer = (tool: string, params: Record<string, unknown>) => {
     if (!selected) return
     tools.invoke(tool, { ...params, layer_id: selected.id })
   }
+
+  const updateAdjust = (key: AdjustKey, value: number) => {
+    const next = { ...adjustDraft, [key]: value }
+    setAdjustDraft(next)
+    setAdjustPreview(toPreviewValues(next))
+  }
+
+  const clearAdjust = () => {
+    setAdjustDraft(EMPTY_DRAFT)
+    setAdjustPreview(null)
+  }
+
+  const adjustTouched = ADJUST_FIELDS.some((field) => (adjustDraft[field.key] ?? 0) !== 0)
 
   const applyAdjust = () => {
     const params = Object.fromEntries(
@@ -116,11 +220,11 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
     )
     if (Object.keys(params).length === 0) return
     tools.invoke('adjust_image', params)
-    setAdjustDraft(EMPTY_DRAFT) // 应用后表单归零：避免"上次数值残留再应用"
+    clearAdjust() // 应用后表单归零：避免"上次数值残留再应用"
   }
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col overflow-hidden border-l border-line bg-paper">
+    <aside className="absolute inset-y-0 right-0 z-20 flex w-72 flex-col overflow-hidden border-l border-line bg-paper shadow-panel animate-slide-in">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
         <div className="flex items-center gap-1">
           <button
@@ -150,38 +254,43 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col divide-y divide-line overflow-y-auto">
+      <div className="scrollbar-slim flex min-h-0 flex-1 flex-col divide-y divide-line overflow-y-auto">
         {panel === 'adjust' ? (
           <>
             <section className="flex flex-col gap-2 px-4 py-3">
-              <h3 className="text-xs font-medium text-muted">调色（应用后归零）</h3>
+              <h3 className="text-xs font-medium text-muted">调色（拖动实时预览，应用后归零）</h3>
               {ADJUST_FIELDS.map((field) => (
-                <Slider
+                <SliderField
                   key={field.key}
                   label={field.label}
                   min={field.min}
                   max={1}
                   step={0.05}
                   value={adjustDraft[field.key] ?? 0}
+                  origin={0}
                   disabled={busy}
-                  onCommit={(value) => setAdjustDraft((draft) => ({ ...draft, [field.key]: value }))}
+                  onInput={(value) => updateAdjust(field.key, value)}
+                  onCommit={(value) => updateAdjust(field.key, value)}
                 />
               ))}
+              <p className="text-xs text-faint">锐化与清晰度不参与实时预览，应用后可见。</p>
             </section>
             <section className="flex gap-2 px-4 py-3">
               <button
                 type="button"
-                onClick={() => setAdjustDraft(EMPTY_DRAFT)}
-                disabled={busy}
-                className="flex-1 rounded-control border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:bg-brand-soft hover:text-brand-strong disabled:opacity-40"
+                onClick={clearAdjust}
+                disabled={busy || !adjustTouched}
+                title="恢复全部调色滑杆为 0"
+                className="flex-1 rounded-control border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:bg-brand-soft hover:text-brand-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
               >
                 重置
               </button>
               <button
                 type="button"
                 onClick={applyAdjust}
-                disabled={busy}
-                className="flex-1 rounded-control bg-brand px-3 py-1.5 text-xs font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:opacity-40"
+                disabled={busy || !adjustTouched}
+                title="把当前调色应用到当前图"
+                className="flex-1 rounded-control bg-brand px-3 py-1.5 text-xs font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-brand"
               >
                 应用
               </button>
@@ -213,32 +322,38 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
 
             {selected && (
               <section className="flex flex-col gap-2 px-4 py-3">
-                <h3 className="text-xs font-medium text-muted">变换（松手提交）</h3>
-                <Slider
+                <h3 className="text-xs font-medium text-muted">变换（拖动实时预览，松手提交）</h3>
+                <SliderField
                   label="透明度"
                   min={0}
                   max={1}
                   step={0.01}
                   value={selected.opacity}
+                  origin={1}
                   disabled={busy}
+                  onInput={(value) => setLayerPreview({ id: selected.id, opacity: value })}
                   onCommit={(value) => invokeWithLayer('set_layer_opacity', { opacity: value })}
                 />
-                <Slider
+                <SliderField
                   label="图层缩放"
                   min={0.1}
                   max={3}
                   step={0.05}
                   value={Math.abs(selected.transform.scale_x)}
+                  origin={1}
                   disabled={busy}
+                  onInput={(value) => setLayerPreview({ id: selected.id, scale: value })}
                   onCommit={(value) => invokeWithLayer('scale_layer', { scale_x: value, scale_y: value })}
                 />
-                <Slider
+                <SliderField
                   label="旋转"
                   min={-180}
                   max={180}
                   step={1}
                   value={selected.transform.rotation}
+                  origin={0}
                   disabled={busy}
+                  onInput={(value) => setLayerPreview({ id: selected.id, rotation: value })}
                   onCommit={(value) => invokeWithLayer('rotate_layer', { rotation: value })}
                 />
                 <div className="mt-1 grid grid-cols-4 gap-1">

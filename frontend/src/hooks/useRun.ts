@@ -1,8 +1,10 @@
 /** 生图任务钩子：useGenerate（提交）+ useRun（双源合并进度）。
  *
  * 双源合并：EventSource 实时帧驱动界面，react-query 快照是可恢复的事实源——
- * 终态关连接并 invalidate（候选图来自快照）；连接出错回退快照不自旋重连；
- * 切任务校验帧 id，旧连接的迟到帧不得污染新任务。
+ * 终态关连接并 invalidate（候选图来自快照）；切任务校验帧 id，旧连接的迟到帧不得污染新任务。
+ * S11 修订（对 S5「连接出错回退快照」的取代）：快照已终态不建 SSE——刷新已完成的
+ * 任务不再走"建连→收一帧→关连→重放签名 URL"的无谓循环（签名现算是真实成本）；
+ * 连接错误交给 EventSource 自动重连（重连后服务端先重播快照帧），终态帧自带快照失效。
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
@@ -55,8 +57,12 @@ export function useRun(runId: string | undefined) {
     enabled: Boolean(runId),
   })
 
+  const snapshotStatus = query.data?.status
+  const snapshotTerminal = snapshotStatus !== undefined && isTerminal(snapshotStatus)
+
   useEffect(() => {
-    if (!runId) return
+    // 终态短路：快照已终态（或尚未取得快照）不建连——终态会话零 SSE 连接
+    if (!runId || !snapshotStatus || snapshotTerminal) return
 
     const source = new EventSource(`/events/runs/${runId}`)
     source.onmessage = (event) => {
@@ -69,15 +75,10 @@ export function useRun(runId: string | undefined) {
         queryClient.invalidateQueries({ queryKey: runKey(runId) })
       }
     }
-    source.onerror = () => {
-      // 连接出错回退快照（不自旋重连）：清掉实时帧，让 refetch 后的快照重新成为事实源，
-      // 否则断连前最后一帧会永远压住新快照——界面停在过期进度
-      source.close()
-      setLive(null)
-      queryClient.invalidateQueries({ queryKey: runKey(runId) })
-    }
+    // 无 onerror 兜底：EventSource 自带自动重连（服务端重连先播快照帧），
+    // 主动 close+invalidate 会让断连期间界面失去实时性
     return () => source.close()
-  }, [runId, queryClient])
+  }, [runId, snapshotStatus, snapshotTerminal, queryClient])
 
   const run = useMemo(() => merge(query.data, live), [query.data, live])
 
