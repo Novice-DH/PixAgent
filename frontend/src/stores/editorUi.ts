@@ -1,8 +1,32 @@
-/** 编辑器瞬态 UI store（zustand，纯瞬态不持久化）：图层选择、裁剪框、对比、右栏面板。
- * 只放"刷新即忘"的界面状态——画布文档与视图缩放分属服务端与 canvasView，绝不混入。 */
+/** 编辑器瞬态 UI store（zustand，纯瞬态不持久化）：图层选择、裁剪框、对比、右栏面板、
+ * 拖动期实时预览。只放"刷新即忘"的界面状态——画布文档与视图缩放分属服务端与
+ * canvasView，绝不混入。预览是渲染态不落数据：文档回传新值即撤。 */
 import { create } from 'zustand'
 
 export type EditorPanel = 'layers' | 'adjust' | null
+
+/** 调色拖动期预览：九参数当前值（与 lib/adjustPreview 对齐，sharpness/clarity 不参与） */
+export interface AdjustPreviewValues {
+  brightness: number
+  contrast: number
+  highlights: number
+  shadows: number
+  temperature: number
+  tint: number
+  saturation: number
+  vibrance: number
+  vignette: number
+}
+
+export type AdjustPreviewKey = keyof AdjustPreviewValues
+
+/** 图层变换拖动期预览：命中 id 的层用这些值覆盖渲染（scale 为绝对幅值，翻转由文档符号提供） */
+export interface LayerPreview {
+  id: string
+  opacity?: number
+  scale?: number
+  rotation?: number
+}
 
 /** 裁剪比例：free 为自由框，其余锁定纵横比（与后端 Ratio 对齐）。 */
 export type CropRatio = 'free' | '1:1' | '4:5' | '9:16' | '16:9'
@@ -48,6 +72,8 @@ interface EditorUiState {
   /** 分割线位置（0–1，默认居中） */
   compareAt: number
   panel: EditorPanel
+  adjustPreview: AdjustPreviewValues | null
+  layerPreview: LayerPreview | null
   selectLayer: (id: string | null) => void
   openCrop: (docWidth: number, docHeight: number) => void
   setCropRatio: (ratio: CropRatio, docWidth: number, docHeight: number) => void
@@ -57,6 +83,8 @@ interface EditorUiState {
   setCompareAt: (at: number) => void
   closeCompare: () => void
   setPanel: (panel: EditorPanel) => void
+  setAdjustPreview: (values: AdjustPreviewValues | null) => void
+  setLayerPreview: (preview: LayerPreview | null) => void
 }
 
 export const useEditorUi = create<EditorUiState>((set) => ({
@@ -67,6 +95,8 @@ export const useEditorUi = create<EditorUiState>((set) => ({
   compareOpen: false,
   compareAt: 0.5,
   panel: 'layers',
+  adjustPreview: null,
+  layerPreview: null,
   selectLayer: (id) => set({ selectedLayerId: id }),
   openCrop: (docWidth, docHeight) =>
     set((state) => ({
@@ -87,4 +117,6 @@ export const useEditorUi = create<EditorUiState>((set) => ({
   closeCompare: () => set({ compareOpen: false }),
   setPanel: (panel) =>
     set((state) => ({ panel: state.panel === panel ? null : panel, cropOpen: false, compareOpen: false })),
+  setAdjustPreview: (values) => set({ adjustPreview: values }),
+  setLayerPreview: (preview) => set({ layerPreview: preview }),
 }))

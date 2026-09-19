@@ -23,6 +23,7 @@ export default function ImageWall({ wall, currentAssetId, disabled = false, onSw
             disabled={disabled || current}
             aria-pressed={current}
             aria-label={`切换到图片 ${position}（${KIND_LABELS[asset.kind] ?? asset.kind}）`}
+            title={current ? '当前图片' : `切换到图片 ${position}（${KIND_LABELS[asset.kind] ?? asset.kind}）`}
             onClick={() => onSwitch(asset.id)}
             className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-control border-2 bg-canvas transition-colors disabled:cursor-default ${
               current ? 'border-brand' : 'border-transparent hover:border-line-strong'

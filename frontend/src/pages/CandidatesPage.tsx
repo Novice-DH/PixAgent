@@ -151,6 +151,7 @@ function CandidateCard({
     <button
       type="button"
       aria-pressed={picked}
+      title={picked ? '已选为当前候选' : `选用候选图 ${index}`}
       onClick={onPick}
       className={`relative overflow-hidden rounded-card border-2 bg-paper shadow-card transition-all ${
         picked ? 'border-brand ring-2 ring-brand/40' : 'border-transparent hover:border-line-strong'

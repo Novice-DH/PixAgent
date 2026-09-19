@@ -1,8 +1,9 @@
 /** 步骤卡片：对话内一步工具执行的进度——useRun 双源合并（SSE 帧 + 快照兜底）零改造复用。
- * 终态时 invalidate 会话键族前缀 ['session', id]：详情/历史/消息一次全刷，
- * 工具产出进图片墙靠它；可空 run_id 不启用查询。 */
+ * watched 纪律（S11）：invalidate 为"刚完成"这个事件服务，不是为"已终态"这个状态——
+ * 只有亲眼经历过 queued/running 的步骤在终态才刷新会话键族；首屏渲染的已终态
+ * 历史步骤不触发（否则打开编辑器就对每个历史步骤刷一遍墙）。可空 run_id 不启用查询。 */
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import type { PlanStep } from '@/api/agent'
 import { isTerminal } from '@/api/runs'
@@ -14,10 +15,17 @@ const MIN_PROGRESS_PERCENT = 4
 
 export default function StepCard({ step, sessionId }: { step: PlanStep; sessionId: string }) {
   const queryClient = useQueryClient()
+  const watchedRef = useRef(false)
   const { run, notFound } = useRun(step.run_id ?? undefined)
 
   useEffect(() => {
-    if (run && isTerminal(run.status)) {
+    if (!run) return
+    if (!isTerminal(run.status)) {
+      watchedRef.current = true // 亲眼见过它运行
+      return
+    }
+    if (watchedRef.current) {
+      watchedRef.current = false // 只在"运行→终态"事件触发一次
       queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) })
     }
   }, [run, sessionId, queryClient])

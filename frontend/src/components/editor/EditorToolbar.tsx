@@ -61,7 +61,7 @@ function ToolButton({
       title={title ?? label}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-control px-2.5 py-1 text-sm text-muted transition-colors hover:bg-brand-soft hover:text-brand-strong aria-pressed:bg-brand-soft aria-pressed:text-brand-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
+      className="rounded-control px-2.5 py-1 text-sm text-muted transition-[color,background-color,transform] duration-150 hover:bg-brand-soft hover:text-brand-strong active:scale-95 aria-pressed:bg-brand-soft aria-pressed:text-brand-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
     >
       {label}
     </button>
@@ -97,9 +97,9 @@ export default function EditorToolbar({
   onCropConfirm,
   onCropCancel,
 }: EditorToolbarProps) {
-  // 视图状态按字段订阅：缩放百分比随 scale 更新，动作引用稳定
+  // 视图状态按字段订阅：缩放百分比随 scale 更新，动作引用稳定（−/＋ 走 stepZoom 缓动）
   const scale = useCanvasView((state) => state.scale)
-  const zoomBy = useCanvasView((state) => state.zoomBy)
+  const stepZoom = useCanvasView((state) => state.stepZoom)
   const zoomTo = useCanvasView((state) => state.zoomTo)
   // value 跟随服务端标题（改名回包后同步）；cancelledRef 标记 Escape 还原，
   // 防止紧随其后的 blur 事件把草稿当提交
@@ -209,10 +209,10 @@ export default function EditorToolbar({
           disabled={!action.hasPrevious}
         />
         <div className="mx-1 h-5 w-px bg-line" />
-        <ToolButton label="−" onClick={() => zoomBy(1 / ZOOM_STEP)} title="缩小" />
-        <ToolButton label={`${Math.round(scale * 100)}%`} onClick={() => zoomTo(1)} title="点击回到实际像素" />
-        <ToolButton label="＋" onClick={() => zoomBy(ZOOM_STEP)} title="放大" />
-        <ToolButton label="适应" onClick={onFit} />
+        <ToolButton label="−" onClick={() => stepZoom(1 / ZOOM_STEP)} title="缩小（快捷键 −）" />
+        <ToolButton label={`${Math.round(scale * 100)}%`} onClick={() => zoomTo(1)} title="点击回到实际像素（快捷键 1）" />
+        <ToolButton label="＋" onClick={() => stepZoom(ZOOM_STEP)} title="放大（快捷键 ＋）" />
+        <ToolButton label="适应" onClick={onFit} title="适应窗口（快捷键 0，双击画布同效）" />
         <ToolButton label="图层" pressed={layersOpen} onClick={onToggleLayers} />
       </div>
     </div>

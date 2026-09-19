@@ -1,19 +1,21 @@
-/** 编辑器页：会话侧栏 + 工具栏 + 画布 + 图片墙 + 右栏面板。
+/** 编辑器页：会话侧栏 + 工具栏 + 画布 + 图片墙 + 画布右侧浮层面板。
  * 满高应用式布局：根部直接用 h-screen 建立高度链（WorkbenchLayout 内容区由
  * min-h-screen 拉伸而来，百分比高度链解析不可靠），页面级不出现滚动条，
  * 滚动只发生在侧栏/面板/墙内部。
  * 全局键盘：Cmd/Ctrl+Z 撤销、+Shift 或 +Y 重做、Escape 关裁剪/对比；
- * 焦点在 input/textarea 时全部跳过（快捷键吞输入是演示现场事故）。 */
+ * 0 适应、1 实际像素、+/− 缩放（无修饰键才生效）；焦点在 input/textarea 时全部跳过
+ * （快捷键吞输入是演示现场事故）。 */
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import CanvasStage from '@/components/editor/CanvasStage'
+import CanvasHint from '@/components/editor/CanvasHint'
 import EditorToolbar from '@/components/editor/EditorToolbar'
 import ImageWall from '@/components/editor/ImageWall'
 import LayerPanel from '@/components/editor/LayerPanel'
 import SessionSidebar from '@/components/editor/SessionSidebar'
 import { ApiError } from '@/api/client'
-import { useCanvasView } from '@/stores/canvasView'
+import { ZOOM_STEP, useCanvasView } from '@/stores/canvasView'
 import { useEditorUi } from '@/stores/editorUi'
 import { errorMessage } from '@/hooks/useAuth'
 import {
@@ -38,6 +40,8 @@ export default function EditorPage() {
   const patchSession = usePatchSession()
   const tools = useSessionTools(sessionId)
   const fit = useCanvasView((state) => state.fit)
+  const stepZoom = useCanvasView((state) => state.stepZoom)
+  const zoomTo = useCanvasView((state) => state.zoomTo)
   const cropOpen = useEditorUi((state) => state.cropOpen)
   const cropRatio = useEditorUi((state) => state.cropRatio)
   const cropRect = useEditorUi((state) => state.cropRect)
@@ -49,12 +53,15 @@ export default function EditorPage() {
   const closeCompare = useEditorUi((state) => state.closeCompare)
   const panel = useEditorUi((state) => state.panel)
   const setPanel = useEditorUi((state) => state.setPanel)
-  const [layersPanelOpen, setLayersPanelOpen] = useState(true)
   // 改名失败回退信号：递增触发工具栏把输入框重置回服务端标题
   const [renameFailTick, setRenameFailTick] = useState(0)
   // mutate 引用稳定（react-query 保证）；解构出来供快捷键 effect 作依赖
   const { mutate: undoMutate } = tools.undo
   const { mutate: redoMutate } = tools.redo
+
+  // 快捷键所需的画幅尺寸进 effect 依赖（会话/画幅变化才重挂监听，action 引用稳定）
+  const docWidth = detailQuery.data?.document.width
+  const docHeight = detailQuery.data?.document.height
 
   // 全局快捷键：无条件挂载（hooks 纪律），无会话上下文时在回调内短路；
   // 焦点在 input/textarea/contentEditable 时全部跳过
@@ -80,11 +87,49 @@ export default function EditorPage() {
       if (event.key === 'Escape') {
         closeCrop()
         closeCompare()
+        return
+      }
+      // 视图快捷键只在无修饰键时生效（按住 meta/shift/alt 不触发）；
+      // 裁剪态与滚轮同纪律：视图操作全部让位给裁剪框
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (cropOpen) return
+      if (event.key === '0') {
+        if (docWidth && docHeight) {
+          event.preventDefault()
+          fit(docWidth, docHeight)
+        }
+        return
+      }
+      if (event.key === '1') {
+        event.preventDefault()
+        zoomTo(1)
+        return
+      }
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        stepZoom(ZOOM_STEP)
+        return
+      }
+      if (event.key === '-' || event.key === '_') {
+        event.preventDefault()
+        stepZoom(1 / ZOOM_STEP)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [sessionId, redoMutate, undoMutate, closeCrop, closeCompare])
+  }, [
+    sessionId,
+    redoMutate,
+    undoMutate,
+    closeCrop,
+    closeCompare,
+    zoomTo,
+    stepZoom,
+    fit,
+    docWidth,
+    docHeight,
+    cropOpen,
+  ])
 
   // /editor 未选会话：空态引导去创作
   if (!sessionId) {
@@ -107,24 +152,33 @@ export default function EditorPage() {
   // 越权或不存在一律 404：显示「会话不存在」空态，不泄露存在性
   const notFound = detailQuery.error instanceof ApiError && detailQuery.error.status === 404
 
-  if (notFound) {
+  // 加载/错误单返回：isPending、isError、404 共用一个空态壳，文案按态分派
+  if (detailQuery.isPending || detailQuery.isError || !detail) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-canvas">
-        <p className="text-sm text-muted">会话不存在</p>
-        <Link
-          to="/create"
-          className="rounded-control bg-brand px-4 py-2 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong"
-        >
-          去创作
-        </Link>
-      </div>
-    )
-  }
-
-  if (detailQuery.isPending || !detail) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-canvas">
-        <p className="text-sm text-muted">正在加载会话…</p>
+        {notFound ? (
+          <>
+            <p className="text-sm text-muted">会话不存在</p>
+            <Link
+              to="/create"
+              className="rounded-control bg-brand px-4 py-2 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong"
+            >
+              去创作
+            </Link>
+          </>
+        ) : detailQuery.isError ? (
+          <>
+            <p className="text-sm text-danger">{errorMessage(detailQuery.error)}</p>
+            <Link
+              to="/create"
+              className="rounded-control bg-brand px-4 py-2 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong"
+            >
+              去创作
+            </Link>
+          </>
+        ) : (
+          <p className="text-sm text-muted">正在加载会话…</p>
+        )}
       </div>
     )
   }
@@ -168,16 +222,13 @@ export default function EditorPage() {
           cropOpen={cropOpen}
           cropRatio={cropRatio}
           adjustOpen={panel === 'adjust'}
-          layersOpen={layersPanelOpen && panel === 'layers'}
+          layersOpen={panel === 'layers'}
           compareOpen={compareOpen}
           onFlipHorizontal={() => invoke({ tool: 'flip_layer', params: { direction: 'horizontal' } })}
           onFlipVertical={() => invoke({ tool: 'flip_layer', params: { direction: 'vertical' } })}
           onRemoveBackground={() => invoke({ tool: 'remove_background' })}
           onToggleAdjust={() => setPanel('adjust')}
-          onToggleLayers={() => {
-            setLayersPanelOpen(panel !== 'layers' ? true : !layersPanelOpen)
-            setPanel('layers')
-          }}
+          onToggleLayers={() => setPanel('layers')}
           onUndo={() => tools.undo.mutate()}
           onRedo={() => tools.redo.mutate()}
           onToggleCompare={() => (compareOpen ? closeCompare() : openCompare())}
@@ -191,39 +242,29 @@ export default function EditorPage() {
             {errorMessage(patchSession.error)}
           </p>
         )}
-        {tools.invoke.error && (
-          <p role="alert" className="shrink-0 bg-danger/10 px-4 py-1 text-xs text-danger">
-            {errorMessage(tools.invoke.error)}
-          </p>
-        )}
 
-        {/* 像素工具执行中：顶部提示条（阶段 · 百分比），进度条视觉最小 4% */}
-        {tools.pendingStage !== null && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="shrink-0 bg-brand-soft px-4 py-1.5 text-xs text-brand-strong"
-          >
-            <div className="mb-1 flex justify-between tabular-nums">
-              <span>{tools.pendingStage}</span>
-              <span>{Math.max(4, tools.pendingProgress)}%</span>
-            </div>
-            <div className="h-1 overflow-hidden rounded-full bg-paper">
-              <div
-                className="h-full rounded-full bg-brand transition-[width]"
-                style={{ width: `${Math.max(4, tools.pendingProgress)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="min-h-0 flex-1">
+        {/* 画布区：面板与情境提示都是画布上的浮层（覆盖式），开合不推动画布 */}
+        <div className="relative min-h-0 flex-1">
           <CanvasStage
             sessionId={sessionId}
             document={detail.document}
             previousDocument={detail.previous_document}
             resolveAssetUrl={resolveAssetUrl}
           />
+          <CanvasHint
+            busyStage={tools.pendingStage}
+            busyProgress={tools.pendingProgress}
+            cropOpen={cropOpen}
+            compareOpen={compareOpen}
+          />
+          {panel !== null && (
+            <LayerPanel
+              detail={detail}
+              history={historyQuery.data ?? []}
+              tools={{ busy: tools.busy, invoke: (tool, params) => invoke({ tool, params }) }}
+              onClose={() => setPanel(null)}
+            />
+          )}
         </div>
 
         <ImageWall
@@ -233,18 +274,6 @@ export default function EditorPage() {
           onSwitch={(assetId) => patchSession.mutate({ sessionId, input: { current_asset_id: assetId } })}
         />
       </div>
-
-      {layersPanelOpen && panel !== null && (
-        <LayerPanel
-          detail={detail}
-          history={historyQuery.data ?? []}
-          tools={{ busy: tools.busy, invoke: (tool, params) => invoke({ tool, params }) }}
-          onClose={() => {
-            setLayersPanelOpen(false)
-            setPanel(null)
-          }}
-        />
-      )}
     </div>
   )
 }

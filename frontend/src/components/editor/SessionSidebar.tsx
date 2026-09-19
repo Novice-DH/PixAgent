@@ -64,13 +64,9 @@ export default function SessionSidebar() {
       {sessionId ? (
         <>
           <AgentConversation turns={turnsQuery.data ?? []} sessionId={sessionId} />
-          {sendMessage.error && (
-            <p role="alert" className="shrink-0 bg-danger/10 px-3 py-1 text-xs text-danger">
-              {errorMessage(sendMessage.error)}
-            </p>
-          )}
           <MessageComposer
             pending={sendMessage.isPending}
+            error={sendMessage.error ? errorMessage(sendMessage.error) : null}
             onSend={(text) => sendMessage.mutate(text)}
           />
         </>

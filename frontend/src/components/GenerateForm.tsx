@@ -69,6 +69,7 @@ export default function GenerateForm({ defaultPrompt = '', pending, onSubmit }: 
               key={value}
               type="button"
               aria-pressed={ratio === value}
+              title={`按 ${RATIO_LABELS[value]} 生成`}
               onClick={() => setRatio(value)}
               className={`rounded-control border px-3 py-1.5 text-sm transition-colors ${
                 ratio === value
@@ -90,6 +91,7 @@ export default function GenerateForm({ defaultPrompt = '', pending, onSubmit }: 
               key={value}
               type="button"
               aria-pressed={count === value}
+              title={`一次生成 ${value} 张候选`}
               onClick={() => setCount(value)}
               className={`h-9 w-12 rounded-control border text-sm transition-colors ${
                 count === value
@@ -127,7 +129,7 @@ export default function GenerateForm({ defaultPrompt = '', pending, onSubmit }: 
       <button
         type="submit"
         disabled={!canSubmit}
-        className="rounded-control bg-brand px-4 py-2.5 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:opacity-60"
+        className="rounded-control bg-brand px-4 py-2.5 text-sm font-medium text-paper shadow-control transition-[color,background-color,transform] duration-150 hover:bg-brand-strong active:scale-[0.99] disabled:opacity-60"
       >
         {pending ? '正在提交…' : '开始生成'}
       </button>

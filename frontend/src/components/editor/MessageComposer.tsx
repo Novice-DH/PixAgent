@@ -1,13 +1,15 @@
 /** 输入区：textarea rows=2；Enter（非 Shift、非输入法组合态）发送并清空，
- * Shift+Enter 换行；空白或 pending 禁用；按钮文案 pending「思考中…」。 */
+ * Shift+Enter 换行；空白或 pending 禁用；按钮文案 pending「思考中…」。
+ * 发送失败在输入框下方就地展示红色错误（S11：错误与输入同处，视线不跳）。 */
 import { useState } from 'react'
 
 interface MessageComposerProps {
   pending: boolean
+  error?: string | null
   onSend: (text: string) => void
 }
 
-export default function MessageComposer({ pending, onSend }: MessageComposerProps) {
+export default function MessageComposer({ pending, error, onSend }: MessageComposerProps) {
   const [text, setText] = useState('')
   const canSend = text.trim().length > 0 && !pending
 
@@ -40,10 +42,15 @@ export default function MessageComposer({ pending, onSend }: MessageComposerProp
         }}
         className="w-full resize-none rounded-control border border-line bg-paper px-2.5 py-2 text-sm text-ink placeholder:text-faint focus:border-brand focus:outline-none"
       />
+      {error && (
+        <p role="alert" className="mt-1.5 text-xs text-danger">
+          {error}
+        </p>
+      )}
       <button
         type="submit"
         disabled={!canSend}
-        className="mt-2 w-full rounded-control bg-brand px-3 py-2 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-2 w-full rounded-control bg-brand px-3 py-2 text-sm font-medium text-paper shadow-control transition-colors hover:bg-brand-strong active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? '思考中…' : '发送'}
       </button>
