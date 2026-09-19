@@ -30,6 +30,7 @@ from app.schemas.session import (
 from app.services import agent as agent_service
 from app.services import assets as assets_service
 from app.services import selections, sessions, tools
+from app.tools.context import ToolError
 
 router = APIRouter(tags=["sessions"])
 
@@ -256,6 +257,12 @@ async def create_selection(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=selections.BLANK_MASK_MESSAGE,
+        ) from None
+    except ToolError:
+        # 拍平失败（如画布引用的素材不存在）是数据/环境故障，有界透出而非 500
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SELECTION_SERVICE_UNAVAILABLE,
         ) from None
     except SegmentError:
         # 分割提供方不可用（rembg 显式指定但失败、配置未知值）是环境故障非用户错误

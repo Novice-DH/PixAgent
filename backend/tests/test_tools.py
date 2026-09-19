@@ -672,6 +672,18 @@ async def test_point_selection_roundtrip_stale_409_and_empty_422(
     assert empty.json()["detail"] == "请点选或涂抹选区"
 
 
+async def test_selection_radius_out_of_range_422(client: AsyncClient, open_session) -> None:
+    session = open_session
+
+    response = await _select(
+        client,
+        session["id"],
+        {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}], "radius": 0.001},
+    )
+
+    assert response.status_code == 422  # radius 0.005–0.12 之外拒收
+
+
 async def test_point_selection_append_accumulates_markers(
     client: AsyncClient, open_session
 ) -> None:

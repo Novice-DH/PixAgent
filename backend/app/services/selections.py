@@ -117,7 +117,10 @@ async def select_strokes(
                 session, row.user_id, uuid.UUID(str(mask_asset_id))
             )
             if asset is not None:
-                base = mask_edits.to_luma(await get_object(asset.storage_key), size)
+                # 解码 + 重采样不进事件循环（与 overlay/rasterize 同一纪律）
+                base = await asyncio.to_thread(
+                    mask_edits.to_luma, await get_object(asset.storage_key), size
+                )
         markers = existing.get("markers") or []
     pixel_strokes = [
         [(x * size[0], y * size[1]) for x, y in stroke] for stroke in strokes

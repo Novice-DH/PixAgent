@@ -57,6 +57,12 @@ export default function EditorPage() {
   const selectMode = useEditorUi((state) => state.selectMode)
   const setSelectMode = useEditorUi((state) => state.setSelectMode)
   const selection = useEditorUi((state) => state.selection)
+  const setSelection = useEditorUi((state) => state.setSelection)
+  // 会话切换（侧栏导航不重挂载页面）：选区属于旧会话的画布，切会话即清——
+  // 防止跨会话的幽灵遮罩与选区形状误用（revision 恰好相等时服务端拦不住）
+  useEffect(() => {
+    setSelection(null)
+  }, [sessionId, setSelection])
   // 选区 mutation：revision 变化（撤销/切图/重做）时本地选区立即作废（hook 内 effect）
   const {
     addPoint,
