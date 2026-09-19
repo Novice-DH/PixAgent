@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { actionLabel } from '@/api/sessions'
 import type { SessionDetail } from '@/api/sessions'
+import { BackgroundForm, ExpandForm } from '@/components/editor/GenerateEdits'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { ADJUST_PREVIEW_KEYS, type AdjustPreviewValues } from '@/lib/adjustPreview'
 import { useEditorUi } from '@/stores/editorUi'
@@ -255,7 +256,23 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
       </div>
 
       <div className="scrollbar-slim flex min-h-0 flex-1 flex-col divide-y divide-line overflow-y-auto">
-        {panel === 'adjust' ? (
+        {panel === 'background' ? (
+          <section className="flex flex-col gap-2 px-4 py-3">
+            <h3 className="text-xs font-medium text-muted">换背景（单张直接采用，多张进图片墙）</h3>
+            <BackgroundForm
+              busy={busy}
+              onSubmit={(prompt, count) => tools.invoke('replace_background', { prompt, count })}
+            />
+          </section>
+        ) : panel === 'expand' ? (
+          <section className="flex flex-col gap-2 px-4 py-3">
+            <h3 className="text-xs font-medium text-muted">扩图（画布延伸到目标比例）</h3>
+            <ExpandForm
+              busy={busy}
+              onSubmit={(ratio) => tools.invoke('expand_canvas', { ratio })}
+            />
+          </section>
+        ) : panel === 'adjust' ? (
           <>
             <section className="flex flex-col gap-2 px-4 py-3">
               <h3 className="text-xs font-medium text-muted">调色（拖动实时预览，应用后归零）</h3>

@@ -8,6 +8,7 @@ import asyncio
 import io
 import uuid
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from test_agent import _install_planner
@@ -417,3 +418,211 @@ async def test_publish_failure_does_not_break_tools(
     flip = await _invoke(client, body["id"], "flip_layer", {"direction": "horizontal"})
     assert flip.status_code == 202
     assert flip.json()["run"]["status"] == "succeeded"
+
+
+# ---- S12 生成式工具（mock Provider，直呼任务函数） ----
+
+
+async def _run_and_detail(client: AsyncClient, session: dict, tool: str, params: dict):
+    """受理 → 直呼任务函数 → 返回（终态 run、新会话详情）。"""
+    response = await _invoke(client, session["id"], tool, params)
+    assert response.status_code == 202, response.text
+    result = response.json()
+    assert result["run"]["status"] == "queued"
+    await _run_task(result["run"]["id"])
+    run = (await client.get(f"/api/runs/{result['run']['id']}")).json()
+    detail = (await client.get(f"/api/sessions/{session['id']}")).json()
+    return run, detail
+
+
+async def test_replace_background_single_adopts_and_can_undo(
+    client: AsyncClient, credentials, _no_broker
+) -> None:
+    session = await _setup(client, credentials, size=(320, 240))
+
+    run, detail = await _run_and_detail(
+        client, session, "replace_background", {"prompt": "浅木色桌面，晨光从左侧照入"}
+    )
+
+    assert run["status"] == "succeeded"
+    assert detail["current_asset_id"] != session["current_asset_id"]  # 单张直接采用
+    assert detail["revision"] == session["revision"] + 1  # 采用是可撤销编辑
+    assert detail["document"]["width"] == 320  # 换背景画幅不变
+    assert detail["document"]["height"] == 240
+    wall_ids = [w["asset"]["id"] for w in detail["wall"]]
+    assert session["current_asset_id"] in wall_ids  # 旧图仍在墙
+    adopted = next(w for w in detail["wall"] if w["asset"]["id"] == detail["current_asset_id"])
+    assert adopted["asset"]["kind"] == "generated"
+    assert adopted["asset"]["source"] == "tool"
+    assert adopted["asset"]["width"] == 320 and adopted["asset"]["height"] == 240
+    assert detail["can_undo"] is True
+
+    undo = await client.post(f"/api/sessions/{session['id']}/undo")
+    assert undo.status_code == 200
+    undone = undo.json()
+    assert undone["current_asset_id"] == session["current_asset_id"]  # 撤销回到原图
+    assert undone["revision"] == session["revision"]
+
+
+async def test_replace_background_multi_keeps_current(
+    client: AsyncClient, credentials, _no_broker
+) -> None:
+    session = await _setup(client, credentials, size=(320, 240))
+    wall_before = [w["asset"]["id"] for w in
+                   (await client.get(f"/api/sessions/{session['id']}")).json()["wall"]]
+
+    run, detail = await _run_and_detail(
+        client, session, "replace_background", {"prompt": "海边日落", "count": 2}
+    )
+
+    assert run["status"] == "succeeded"
+    assert detail["current_asset_id"] == session["current_asset_id"]  # 多候选不切当前图
+    assert detail["revision"] == session["revision"]  # revision 不被候选污染
+    new_entries = [w for w in detail["wall"] if w["asset"]["id"] not in wall_before]
+    assert len(new_entries) == 2  # 图片墙新增 2 张候选
+    assert all(
+        w["asset"]["kind"] == "generated" and w["asset"]["source"] == "tool" for w in new_entries
+    )
+    assert all(w["asset"]["width"] == 320 and w["asset"]["height"] == 240 for w in new_entries)
+
+
+async def test_expand_canvas_grows_to_cover_ratio(
+    client: AsyncClient, credentials, _no_broker
+) -> None:
+    session = await _setup(client, credentials, size=(320, 240))
+
+    run, detail = await _run_and_detail(
+        client, session, "expand_canvas", {"ratio": "16:9"}
+    )
+
+    assert run["status"] == "succeeded"
+    assert detail["document"]["width"] == 426  # 刚好包住原画的 16:9（cover_size）
+    assert detail["document"]["height"] == 240
+    assert detail["current_asset_id"] != session["current_asset_id"]  # 扩图总是直接采用
+    assert detail["revision"] == session["revision"] + 1
+    adopted = next(w for w in detail["wall"] if w["asset"]["id"] == detail["current_asset_id"])
+    assert adopted["asset"]["width"] == 426 and adopted["asset"]["height"] == 240
+    assert adopted["asset"]["kind"] == "generated"
+
+
+async def test_upscale_doubles_dimensions(
+    client: AsyncClient, credentials, _no_broker
+) -> None:
+    session = await _setup(client, credentials, size=(320, 240))
+
+    run, detail = await _run_and_detail(client, session, "upscale_image", {"scale": 2})
+
+    assert run["status"] == "succeeded"
+    assert detail["document"]["width"] == 640  # document 跟随翻倍
+    assert detail["document"]["height"] == 480
+    assert detail["current_asset_id"] != session["current_asset_id"]  # 超分总是直接采用
+    assert detail["revision"] == session["revision"] + 1
+    adopted = next(w for w in detail["wall"] if w["asset"]["id"] == detail["current_asset_id"])
+    assert adopted["asset"]["width"] == 640 and adopted["asset"]["height"] == 480
+
+
+# ---- S12 故障注入（验收 E） ----
+
+
+async def test_dashscope_without_key_fails_all_three_generative_tools(
+    client: AsyncClient, credentials, _no_broker, monkeypatch
+) -> None:
+    """IMAGE_PROVIDER=dashscope 且无 key：三个新工具落 failed、错误含配置键名。"""
+    from app.config import get_settings
+    from app.providers import get_image_provider
+
+    session = await _setup(client, credentials, size=(320, 240))
+    settings = get_settings()
+    monkeypatch.setattr(settings, "image_provider", "dashscope")
+    get_image_provider.cache_clear()
+    try:
+        cases = [
+            ("replace_background", {"prompt": "海边日落"}),
+            ("expand_canvas", {"ratio": "16:9"}),
+            ("upscale_image", {}),
+        ]
+        for tool, params in cases:
+            response = await _invoke(client, session["id"], tool, params)
+            assert response.status_code == 202, response.text
+            run_id = response.json()["run"]["id"]
+            await _run_task(run_id)
+            run = (await client.get(f"/api/runs/{run_id}")).json()
+            assert run["status"] == "failed", (tool, run)
+            assert "DASHSCOPE_API_KEY" in run["error"], (tool, run["error"])
+        # 会话无脏数据：当前图与 revision 均不变
+        detail = (await client.get(f"/api/sessions/{session['id']}")).json()
+        assert detail["current_asset_id"] == session["current_asset_id"]
+        assert detail["revision"] == session["revision"]
+    finally:
+        get_image_provider.cache_clear()
+
+
+def _install_edit_http_fault(monkeypatch, mode: str) -> None:
+    """只对编辑端点路径注入故障：测试客户端自身也走 httpx.AsyncClient，不能整类替换。"""
+    from app.providers.dashscope import _EDIT_PATH
+
+    original_post = httpx.AsyncClient.post
+
+    async def fake_post(self, path, json=None):
+        if path == _EDIT_PATH:
+            if mode == "timeout":
+                raise httpx.TimeoutException("connect timeout")
+            request = httpx.Request("POST", "http://test" + path)
+            response = httpx.Response(500, request=request, text="server exploded")
+            response.raise_for_status()
+            return response
+        return await original_post(self, path, json=json)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+
+async def _invoke_edit_with_http_fault(
+    client: AsyncClient, credentials: dict, _no_broker, monkeypatch, mode: str
+) -> tuple[str, dict, str]:
+    from app.config import get_settings
+    from app.providers import get_image_provider
+
+    session = await _setup(client, credentials, size=(320, 240))
+    settings = get_settings()
+    monkeypatch.setattr(settings, "image_provider", "dashscope")
+    monkeypatch.setattr(settings, "dashscope_api_key", "test-key-not-real")
+    _install_edit_http_fault(monkeypatch, mode)
+    get_image_provider.cache_clear()
+    try:
+        response = await _invoke(
+            client, session["id"], "replace_background", {"prompt": "海边日落"}
+        )
+        assert response.status_code == 202, response.text
+        run_id = response.json()["run"]["id"]
+        await _run_task(run_id)
+        run = (await client.get(f"/api/runs/{run_id}")).json()
+        detail = (await client.get(f"/api/sessions/{session['id']}")).json()
+        return run["status"], run, detail
+    finally:
+        get_image_provider.cache_clear()
+
+
+
+
+async def test_edit_timeout_surfaces_provider_error_without_dirty_session(
+    client: AsyncClient, credentials, _no_broker, monkeypatch
+) -> None:
+    status, run, detail = await _invoke_edit_with_http_fault(
+        client, credentials, _no_broker, monkeypatch, "timeout"
+    )
+    assert status == "failed"
+    assert run["error"] == "模型服务编辑超时，请稍后重试"
+    # 会话无脏数据：rollback 纪律下 revision 与 document 保持原样
+    assert detail["current_asset_id"] is not None
+    assert detail["revision"] == 1
+
+
+async def test_edit_http_500_surfaces_provider_error_without_dirty_session(
+    client: AsyncClient, credentials, _no_broker, monkeypatch
+) -> None:
+    status, run, detail = await _invoke_edit_with_http_fault(
+        client, credentials, _no_broker, monkeypatch, "http-500"
+    )
+    assert status == "failed"
+    assert run["error"] is not None and run["error"].startswith("模型服务编辑失败")
+    assert detail["revision"] == 1

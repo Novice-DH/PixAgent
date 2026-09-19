@@ -13,12 +13,16 @@ from app.tools.canvas import (
     SCALE_LAYER,
     SET_LAYER_OPACITY,
 )
+from app.tools.enhance import EXPAND_CANVAS, REPLACE_BACKGROUND, UPSCALE_IMAGE
 from app.tools.generate import GENERATE_IMAGE
 from app.tools.retouch import ADJUST_IMAGE, REMOVE_BACKGROUND
 
-# 注册表最终顺序与命名（S10 九工具）
+# 注册表最终顺序与命名（S12 十二工具：生成式三工具追加在 generate_image 之后）
 SPECS: tuple[ToolSpec, ...] = (
     GENERATE_IMAGE,
+    REPLACE_BACKGROUND,
+    EXPAND_CANVAS,
+    UPSCALE_IMAGE,
     REMOVE_BACKGROUND,
     ADJUST_IMAGE,
     CROP_CANVAS,

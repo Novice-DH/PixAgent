@@ -2,17 +2,27 @@
 
 同一提示词永远同一输出：测试与 e2e 断言可精确到尺寸与张数，不用摸彩票。
 进度锚点（逐张回调）与真实 Provider 的节奏对齐，切换 Provider 时前端无感。
+编辑（edit）的换背景/扩图两种形态由目标尺寸区分：同尺寸主体缩 0.88 露新底，
+异尺寸原大居中——端到端断言只看尺寸与张数，不需要两个 mock。
 """
 import asyncio
+import colorsys
 import hashlib
 from io import BytesIO
 
 from PIL import Image, ImageDraw
 
-from app.providers.base import GenerateRequest, ProgressCallback
+from app.providers.base import EditRequest, GenerateRequest, ProgressCallback
 
 # 每张间隔（秒）：模拟真实生图节奏，让 SSE 进度可观察
 PER_IMAGE_DELAY_SECONDS = 0.4
+
+
+def _png(image: Image.Image) -> bytes:
+    """统一 PNG 输出：generate 与 edit/upscale 共用同一编码路径。"""
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 class MockImageProvider:
@@ -28,6 +38,59 @@ class MockImageProvider:
             images.append(self._render(request, digest, index))
             await asyncio.sleep(PER_IMAGE_DELAY_SECONDS)
         return images
+
+    async def edit(
+        self, request: EditRequest, on_progress: ProgressCallback
+    ) -> list[bytes]:
+        subject = Image.open(BytesIO(request.image)).convert("RGBA")
+        target = (
+            (request.width, request.height)
+            if request.width is not None and request.height is not None
+            else subject.size
+        )
+        base_seed = int(hashlib.sha256(request.prompt.encode("utf-8")).hexdigest()[:8], 16)
+        images: list[bytes] = []
+        for index in range(request.count):
+            await on_progress(
+                int((index + 1) / request.count * 100),
+                f"生成第 {index + 1} / {request.count} 张",
+            )
+            images.append(self._compose(subject, target, base_seed + index * 977, request.prompt))
+            await asyncio.sleep(PER_IMAGE_DELAY_SECONDS)
+        return images
+
+    async def upscale(self, image: bytes, scale: int, on_progress: ProgressCallback) -> bytes:
+        subject = Image.open(BytesIO(image)).convert("RGBA")
+        await on_progress(40, "放大画幅")
+        await asyncio.sleep(PER_IMAGE_DELAY_SECONDS)
+        resized = subject.resize(
+            (subject.width * scale, subject.height * scale), Image.LANCZOS
+        )
+        await on_progress(90, "保存结果")
+        return _png(resized)
+
+    def _compose(
+        self, subject: Image.Image, target: tuple[int, int], seed: int, prompt: str
+    ) -> bytes:
+        """确定性合成：色相由 seed 决定的底色画布 + 主体居中（形态由尺寸关系决定）。"""
+        hue = (seed % 360) / 360.0
+        rgb = colorsys.hsv_to_rgb(hue, 0.45, 0.92)
+        canvas = Image.new("RGBA", target, tuple(int(channel * 255) for channel in (*rgb, 1.0)))
+
+        if target == subject.size:
+            # 换背景形态：主体缩 0.88 居中，露出新底
+            inner = subject.resize(
+                (int(subject.width * 0.88), int(subject.height * 0.88)), Image.LANCZOS
+            )
+        else:
+            # 扩图形态：主体原大居中
+            inner = subject
+        offset = ((target[0] - inner.width) // 2, (target[1] - inner.height) // 2)
+        canvas.alpha_composite(inner, offset)
+
+        draw = ImageDraw.Draw(canvas)
+        draw.text((8, 8), prompt[:40], fill=(255, 255, 255, 230))
+        return _png(canvas)
 
     def _render(self, request: GenerateRequest, digest: str, index: int) -> bytes:
         """确定性绘制：从哈希派生调色板与几何布局，纯装饰构图、不含文字。"""
@@ -67,6 +130,4 @@ class MockImageProvider:
                 width=6,
             )
 
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        return buffer.getvalue()
+        return _png(img)
