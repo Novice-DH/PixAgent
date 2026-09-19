@@ -19,6 +19,10 @@ from app.models.base import UUIDBase
 
 class EditSession(UUIDBase):
     __tablename__ = "edit_sessions"
+    # 撤销指针的推进是同请求内的 UPDATE：eager_defaults 让 onupdate 的
+    # updated_at 经 RETURNING 随语句取回，避免同事务后续访问触发隐式刷新
+    # （AsyncSession 下隐式刷新抛 MissingGreenlet）。
+    __mapper_args__ = {"eager_defaults": True}
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -32,6 +36,8 @@ class EditSession(UUIDBase):
     )
     # 失效信号不是版本号：只在切换到不同资产时 +1，旧 revision 上的选区/遮罩视为失效
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    # 撤销指针：当前所处历史位置；seq 分配从 history_seq+1 走，截断重做后与 max(seq) 分离
+    history_seq: Mapped[int] = mapped_column(Integer, default=0)
     document: Mapped[dict[str, Any]] = mapped_column(JSONB)
     # 列表倒序键：项目基类无此列，就地声明，写法与 tool_run 时间列同风格
     updated_at: Mapped[datetime] = mapped_column(

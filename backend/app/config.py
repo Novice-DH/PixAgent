@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     image_edit_model: str = "qwen-image-edit-max"
     planner_model: str = "qwen-plus"
 
+    # 去背景提供方：auto（有 rembg 用之否则四角）| rembg（强求，缺依赖报错）| corner（只用四角）
+    matting_provider: str = "auto"
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

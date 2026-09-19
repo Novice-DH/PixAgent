@@ -176,12 +176,14 @@ async def test_switch_current_bumps_revision_and_rebuilds_document(client, crede
     assert [w["asset"]["id"] for w in wall] == [a1, a2]
     assert [w["position"] for w in wall] == [1, 2]
 
-    # 历史追加 switch_current：params/result 精确
+    # 历史追加 switch_current：params/result 精确（S10 起带 before/after 快照）
     history = (await client.get(f"/api/sessions/{session_id}/history")).json()
     assert [h["seq"] for h in history] == [2, 1]
     assert history[0]["action"] == "switch_current"
-    assert history[0]["params"] == {"asset_id": a2}
-    assert history[0]["result"] == {"revision": 2}
+    assert history[0]["params"]["asset_id"] == a2
+    assert history[0]["params"]["before"]["current_asset_id"] == a1
+    assert history[0]["result"]["after"]["current_asset_id"] == a2
+    assert history[0]["result"]["after"]["revision"] == 2
 
 
 async def test_switch_back_to_existing_wall_asset_does_not_duplicate(client, credentials) -> None:

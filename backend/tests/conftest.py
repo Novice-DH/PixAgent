@@ -38,6 +38,20 @@ def _isolate_redis_url(url: str) -> str:
 
 
 @pytest.fixture(scope="session", autouse=True)
+def corner_matting():
+    """测试期间强制四角抠图：任何环境的 pytest 都不下载 rembg 模型。
+
+    corner 路径是工程兜底不是玩具——把"默认安装、离线环境、CI 全部可跑"
+    这条底线钉进测试套件；rembg 只在用户显式装了 cv 组的真机烟测里出现。
+    """
+    settings = get_settings()
+    original = settings.matting_provider
+    settings.matting_provider = "corner"
+    yield
+    settings.matting_provider = original
+
+
+@pytest.fixture(scope="session", autouse=True)
 def mock_provider():
     """测试期间强制 image_provider=mock 并清 Provider 登记处缓存，结束还原再清。"""
     settings = get_settings()

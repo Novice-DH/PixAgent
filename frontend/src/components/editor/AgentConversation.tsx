@@ -17,11 +17,16 @@ export default function AgentConversation({ turns, sessionId }: { turns: Turn[];
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
         <p className="text-sm text-muted">用一句话描述修改，例如</p>
-        <p className="rounded-control bg-brand-soft px-3 py-1.5 text-sm text-brand-strong">
-          「换成纯白背景」
-        </p>
+        <div className="flex gap-2">
+          <p className="rounded-control bg-brand-soft px-3 py-1.5 text-sm text-brand-strong">
+            「水平翻转」
+          </p>
+          <p className="rounded-control bg-brand-soft px-3 py-1.5 text-sm text-brand-strong">
+            「去背景」
+          </p>
+        </div>
         <p className="mt-2 text-xs text-muted">
-          结果出现在下方图片墙，选中才会替换当前图。
+          裁剪、翻转、去背景等画布变换直接作用于当前图；生成类结果出现在下方图片墙，选中才会替换当前图。
         </p>
       </div>
     )

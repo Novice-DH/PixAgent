@@ -2,12 +2,32 @@
 
 新增工具只改两处：写一个 spec 模块 + 在 SPECS 加一行；
 校验（services.tools.validate）、模型签名（agent.llm）、
-前端面板（后续期）都从这份元组生成。
+前端工具栏（api/sessions.ts 的 ACTION_LABELS 手工同步）都从这份元组生成。
 """
 from app.tools.base import ToolSpec, UnknownTool
+from app.tools.canvas import (
+    CROP_CANVAS,
+    FLIP_LAYER,
+    REORDER_LAYER,
+    ROTATE_LAYER,
+    SCALE_LAYER,
+    SET_LAYER_OPACITY,
+)
 from app.tools.generate import GENERATE_IMAGE
+from app.tools.retouch import ADJUST_IMAGE, REMOVE_BACKGROUND
 
-SPECS: tuple[ToolSpec, ...] = (GENERATE_IMAGE,)
+# 注册表最终顺序与命名（S10 九工具）
+SPECS: tuple[ToolSpec, ...] = (
+    GENERATE_IMAGE,
+    REMOVE_BACKGROUND,
+    ADJUST_IMAGE,
+    CROP_CANVAS,
+    FLIP_LAYER,
+    SET_LAYER_OPACITY,
+    REORDER_LAYER,
+    SCALE_LAYER,
+    ROTATE_LAYER,
+)
 
 
 def spec_of(name: str) -> ToolSpec:

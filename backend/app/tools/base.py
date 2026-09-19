@@ -33,3 +33,8 @@ class ToolSpec:
     handler: Callable[[AsyncSession, ToolRun], Awaitable[dict[str, Any]]]
     needs_approval: bool = False  # 预留 HITL 开关：本期定义不消费，不许提前实现确认流程
     agent_hidden: tuple[str, ...] = ()  # 不暴露给模型的参数名（服务端上下文决定，模型不该编）
+    # 执行通道是工具的内在属性（毫秒级文档计算 vs 秒级像素/模型），不是调用语境：
+    # queued=False 的工具在 submit 内同步执行，202 响应一次带回终态 run 与新会话
+    queued: bool = True
+    # 需要编辑会话上下文的工具：submit 前检查 session_id，缺失抛 InvalidParams
+    session_required: bool = False
