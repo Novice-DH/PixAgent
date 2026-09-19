@@ -34,7 +34,7 @@ class EditSession(UUIDBase):
     current_asset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("assets.id", ondelete="RESTRICT")
     )
-    # 失效信号不是版本号：只在切换到不同资产时 +1，旧 revision 上的选区/遮罩视为失效
+    # 失效信号不是版本号：任何可见变化（文档/当前图/墙）都 +1，旧 revision 上的选区/遮罩视为失效
     revision: Mapped[int] = mapped_column(Integer, default=1)
     # 撤销指针：当前所处历史位置；seq 分配从 history_seq+1 走，截断重做后与 max(seq) 分离
     history_seq: Mapped[int] = mapped_column(Integer, default=0)

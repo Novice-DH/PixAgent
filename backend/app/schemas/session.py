@@ -97,6 +97,39 @@ class ToolInvokeOut(BaseModel):
     session: SessionDetailOut
 
 
+class PointIn(BaseModel):
+    """归一化画布坐标：相对画幅、与像素尺寸解耦（换图不换语义）。"""
+
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+
+
+class SelectIn(BaseModel):
+    """建选区：points（点选）与 strokes（笔刷）至少其一；radius 相对短边比例。"""
+
+    revision: int
+    points: list[PointIn] = Field(default_factory=list)
+    strokes: list[list[PointIn]] = Field(default_factory=list)
+    radius: float = Field(default=0.03, ge=0.005, le=0.12)
+    append: bool = False
+
+
+class MarkerOut(BaseModel):
+    """点选标记：index 从 1 连续递增，坐标归一化（前端直接叠加）。"""
+
+    index: int
+    x: float
+    y: float
+
+
+class SelectionOut(BaseModel):
+    """选区出参：遮罩即资产（现算签名 URL），前端叠加直接消费。"""
+
+    revision: int
+    mask: AssetOut
+    markers: list[MarkerOut]
+
+
 def wall_out(position: int, asset: Asset) -> WallAssetOut:
     out = WallAssetOut(position=position, asset=AssetOut.model_validate(asset))
     out.asset.url = signed_url(asset.storage_key)

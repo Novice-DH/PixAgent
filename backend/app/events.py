@@ -21,7 +21,8 @@ REDIS_TIMEOUT_SECONDS = 3.0
 
 
 @cache
-def _redis() -> Redis:
+def redis_client() -> Redis:
+    """共享 Redis 客户端唯一入口：Pub/Sub 与选区存储共用同一连接生命周期。"""
     return Redis.from_url(
         get_settings().redis_url,
         decode_responses=True,
@@ -36,7 +37,7 @@ def channel_for(run_id: uuid.UUID) -> str:
 
 async def publish_snapshot(run_id: uuid.UUID, snapshot: dict[str, Any]) -> None:
     """状态每次落库后立即广播；负载即 SSE 帧 payload（JSON、非 ASCII 原样）。"""
-    await _redis().publish(channel_for(run_id), json.dumps(snapshot, ensure_ascii=False))
+    await redis_client().publish(channel_for(run_id), json.dumps(snapshot, ensure_ascii=False))
 
 
 class RunSubscription:
@@ -47,7 +48,7 @@ class RunSubscription:
 
     def __init__(self, run_id: uuid.UUID) -> None:
         self._run_id = run_id
-        self._pubsub = _redis().pubsub()
+        self._pubsub = redis_client().pubsub()
 
     async def subscribe(self) -> None:
         await self._pubsub.subscribe(channel_for(self._run_id))
@@ -68,5 +69,5 @@ class RunSubscription:
 
 async def close_redis() -> None:
     """应用关闭时释放共享连接（lifespan 调用）。"""
-    await _redis().aclose()
-    _redis.cache_clear()
+    await redis_client().aclose()
+    redis_client.cache_clear()

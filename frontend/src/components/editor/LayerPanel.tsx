@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { actionLabel } from '@/api/sessions'
 import type { SessionDetail } from '@/api/sessions'
-import { BackgroundForm, ExpandForm } from '@/components/editor/GenerateEdits'
+import { BackgroundForm, ExpandForm, ReplaceForm } from '@/components/editor/GenerateEdits'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { ADJUST_PREVIEW_KEYS, type AdjustPreviewValues } from '@/lib/adjustPreview'
 import { useEditorUi } from '@/stores/editorUi'
@@ -147,6 +147,7 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
   const selectLayer = useEditorUi((state) => state.selectLayer)
   const setAdjustPreview = useEditorUi((state) => state.setAdjustPreview)
   const setLayerPreview = useEditorUi((state) => state.setLayerPreview)
+  const selection = useEditorUi((state) => state.selection)
   const [adjustDraft, setAdjustDraft] = useState<AdjustDraft>(EMPTY_DRAFT)
   const busyRef = useRef(tools.busy)
 
@@ -270,6 +271,22 @@ export default function LayerPanel({ detail, history, tools, onClose }: LayerPan
             <ExpandForm
               busy={busy}
               onSubmit={(ratio) => tools.invoke('expand_canvas', { ratio })}
+            />
+          </section>
+        ) : panel === 'replace' ? (
+          <section className="flex flex-col gap-2 px-4 py-3">
+            <h3 className="text-xs font-medium text-muted">局部替换（只改选区，选区外保持原样）</h3>
+            <ReplaceForm
+              busy={busy}
+              hasSelection={selection !== null}
+              onSubmit={(prompt) => {
+                if (!selection) return
+                tools.invoke('replace_region', {
+                  prompt,
+                  mask_asset_id: selection.maskId,
+                  revision: selection.revision,
+                })
+              }}
             />
           </section>
         ) : panel === 'adjust' ? (

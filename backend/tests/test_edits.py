@@ -363,3 +363,144 @@ def test_cover_size_equal_ratio_untouched():
     from app.ratios import cover_size
 
     assert cover_size(400, 400, Ratio.ONE_ONE) == (400, 400)
+
+
+# ---- S13 纯函数：遮罩合成保内换外保 / corner 点选 / 笔刷环形闭合 ----
+
+
+def _l_mask(size: tuple[int, int], filled) -> bytes:
+    """按判定函数生成 L 遮罩 PNG。"""
+    mask = Image.new("L", size, 0)
+    for x in range(size[0]):
+        for y in range(size[1]):
+            if filled(x, y):
+                mask.putpixel((x, y), 255)
+    buffer = io.BytesIO()
+    mask.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_apply_masked_swaps_inside_keeps_outside():
+    # 保内换外保：选区内像素换成编辑结果，选区外逐字节保持原图
+    from app.edits import apply_masked
+
+    source = _solid(40, 40, (255, 0, 0, 255))
+    edited = _solid(40, 40, (0, 0, 255, 255))
+    mask = _l_mask((40, 40), lambda x, y: 15 <= x < 25 and 15 <= y < 25)
+
+    out = _pixels(apply_masked(source, edited, mask))
+
+    assert _pixel_at(out, 20, 20)[:3] == (0, 0, 255)  # 选区内：编辑结果
+    assert _pixel_at(out, 2, 2) == (255, 0, 0, 255)  # 选区外：逐字节原图
+
+
+def test_apply_masked_aligns_edited_size_with_lanczos():
+    from app.edits import apply_masked
+
+    source = _solid(40, 40, (255, 0, 0, 255))
+    edited = _solid(80, 80, (0, 0, 255, 255))  # 生成端点可能微调画幅
+    mask = _l_mask((40, 40), lambda x, y: True)
+
+    out = _pixels(apply_masked(source, edited, mask))
+
+    assert out.size == (40, 40)  # 对齐到 source，而不是放大画布
+    assert _pixel_at(out, 20, 20)[:3] == (0, 0, 255)
+
+
+def test_to_luma_prefers_alpha_over_luma():
+    # RGBA 遮罩的形状信息在 alpha：品牌色深浅（亮度）不是形状
+    from app.edits.mask import to_luma
+
+    tinted_opaque = _solid(10, 10, (10, 10, 10, 255))  # 亮度低但 alpha 全不透明
+    assert to_luma(tinted_opaque, (10, 10)).getextrema() == (255, 255)
+    transparent = _solid(10, 10, (255, 255, 255, 0))  # 亮度高但全透明
+    assert to_luma(transparent, (10, 10)).getextrema() == (0, 0)
+
+
+def test_to_luma_resizes_with_nearest():
+    from app.edits.mask import to_luma
+
+    luma = to_luma(_solid(20, 20, (0, 0, 0, 255)), (10, 10))
+    assert luma.size == (10, 10)
+
+
+def test_overlay_png_colors_selection_only():
+    from app.edits.mask import HIGHLIGHT_COLOR, overlay_png
+
+    mask = Image.new("L", (10, 10), 0)
+    mask.putpixel((5, 5), 255)
+
+    overlay = _pixels(overlay_png(mask))
+
+    assert _pixel_at(overlay, 5, 5) == (*HIGHLIGHT_COLOR, 255)  # 选中处着色不透明
+    assert _pixel_at(overlay, 0, 0)[3] == 0  # 其余全透明
+
+
+def test_corner_segment_covers_click_clears_far():
+    # 默认安装（无 cv 组）路径：corner 圆形遮罩——点击点必中、远处为空
+    from app.edits import segment
+
+    source = _solid(200, 100, (255, 255, 255, 255))
+
+    overlay = _pixels(segment.segment_points(source, [(0.5, 0.5)]))
+
+    assert _pixel_at(overlay, 100, 50)[3] == 255  # 点击点选中
+    assert _pixel_at(overlay, 5, 5)[3] == 0  # 远处为空
+    # 半径 = max(16, int(min(200, 100) × 0.16)) = 16：边界在、出界无
+    assert _pixel_at(overlay, 116, 50)[3] == 255
+    assert _pixel_at(overlay, 118, 50)[3] == 0
+
+
+def test_segment_without_points_returns_empty_overlay():
+    from app.edits import segment
+
+    overlay = _pixels(segment.segment_points(_solid(32, 32, (255, 255, 255, 255)), []))
+
+    assert overlay.getchannel("A").getextrema()[1] == 0
+
+
+def test_brush_ring_stroke_fills_inside():
+    # 环形闭合：四点环形笔画命中环内中心（polygon 自动闭合），四角仍为空
+    from app.edits.mask import rasterize_strokes
+
+    ring = [[(10, 10), (90, 10), (90, 90), (10, 90)]]
+
+    luma = rasterize_strokes((100, 100), ring, radius=0.05)
+
+    assert luma.getpixel((50, 50)) == 255  # 圈住即选中整块
+    assert all(luma.getpixel(corner) == 0 for corner in [(2, 2), (97, 2), (2, 97), (97, 97)])
+
+
+def test_brush_two_point_stroke_only_band():
+    # 两点笔画只覆盖带子：无 polygon 填充、端点外不延伸
+    from app.edits.mask import rasterize_strokes
+
+    luma = rasterize_strokes((100, 100), [[(20, 50), (80, 50)]], radius=0.05)
+
+    assert luma.getpixel((50, 50)) == 255  # 带上
+    assert luma.getpixel((50, 56)) == 0  # 带外（带宽 5，半宽 2.5）
+    assert luma.getpixel((12, 50)) == 0  # 端点外
+
+
+def test_brush_single_point_dots_circle():
+    from app.edits.mask import rasterize_strokes
+
+    luma = rasterize_strokes((100, 100), [[(50, 50)]], radius=0.05)
+
+    assert luma.getpixel((50, 50)) == 255
+    assert luma.getpixel((50, 54)) == 0  # 半径 2.5 之外
+
+
+def test_brush_stroke_unions_with_base():
+    # 笔刷追加 = union（ImageChops.lighter）：base 与新笔迹都保留
+    from app.edits.mask import rasterize_strokes
+
+    base = Image.new("L", (100, 100), 0)
+    for x in range(0, 40):
+        for y in range(100):
+            base.putpixel((x, y), 255)
+
+    luma = rasterize_strokes((100, 100), [[(60, 50)]], radius=0.05, base=base)
+
+    assert luma.getpixel((20, 50)) == 255  # base 保留
+    assert luma.getpixel((60, 50)) == 255  # 新笔迹并入

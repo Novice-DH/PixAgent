@@ -76,6 +76,52 @@ export function BackgroundForm({ busy, onSubmit }: BackgroundFormProps) {
   )
 }
 
+interface ReplaceFormProps {
+  busy: boolean
+  /** 无选区时表单整体禁用：替换语义的本体是「换成什么」+「改哪里」 */
+  hasSelection: boolean
+  onSubmit: (prompt: string) => void
+}
+
+/** 局部替换表单：描述必填，提交附 mask_asset_id 与 revision（LayerPanel 组装）。 */
+export function ReplaceForm({ busy, hasSelection, onSubmit }: ReplaceFormProps) {
+  const [prompt, setPrompt] = useState('')
+  const canSubmit = hasSelection && prompt.trim().length > 0 && !busy
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!canSubmit) return
+    onSubmit(prompt.trim())
+    setPrompt('')
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1.5 text-xs">
+        <span className="font-medium text-muted">替换成什么（只改选区内容）</span>
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          rows={3}
+          maxLength={500}
+          disabled={busy || !hasSelection}
+          placeholder="把杯子换成陶瓷马克杯"
+          className="resize-none rounded-control border border-line bg-soft px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-brand disabled:opacity-40"
+        />
+      </label>
+      <button
+        type="submit"
+        disabled={!canSubmit}
+        title="只修改选中区域，选区外保持原样"
+        className="rounded-control bg-brand px-3 py-1.5 text-xs font-medium text-paper shadow-control transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        替换
+      </button>
+      {!hasSelection && <p className="text-xs text-faint">先在画布上点选或涂抹要修改的区域</p>}
+    </form>
+  )
+}
+
 interface ExpandFormProps {
   busy: boolean
   onSubmit: (ratio: ExpandRatio) => void

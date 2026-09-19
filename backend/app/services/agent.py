@@ -15,6 +15,7 @@ from app.models.agent_run import AgentRun
 from app.models.asset import Asset
 from app.models.edit_session import EditSession
 from app.models.tool_run import RunStatus
+from app.services import selections
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +23,17 @@ PLANNING_FAILURE_MESSAGE = "规划失败，请重试"
 
 
 async def _describe(session: AsyncSession, record: EditSession) -> str:
-    """画布摘要：只给规划决策必需的元数据事实，不含图片内容理解。"""
+    """画布摘要：只给规划决策必需的元数据事实，不含图片内容理解；选区事实让
+    「把骨头换成黑色」这类一句话直达局部工具，不再反问重选。"""
     document = record.document or {}
     layers = document.get("layers") or []
     asset = await session.get(Asset, record.current_asset_id)
     fmt = asset.image_format if asset is not None else "未知"
     alpha = "（含透明通道）" if asset is not None and asset.has_alpha else ""
+    fact = await selections.describe_fact(record.id, record.revision)
     return (
         f"画幅 {document.get('width')}×{document.get('height')}，"
-        f"图层 {len(layers)} 个，修订号 {record.revision}，当前图 {fmt}{alpha}"
+        f"图层 {len(layers)} 个，修订号 {record.revision}，当前图 {fmt}{alpha}，{fact}"
     )
 
 
