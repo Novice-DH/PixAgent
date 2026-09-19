@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import redis.exceptions
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +40,12 @@ def snapshot(run: ToolRun) -> dict[str, Any]:
 
 
 async def _publish(run: ToolRun) -> None:
-    await events.publish_snapshot(run.id, snapshot(run))
+    """进度帧尽力而为：Redis 故障时无人能订阅（SSE 同样依赖 Redis），
+    发布失败只记日志不阻断状态机——同步文档工具在停 Redis 下必须仍可用。"""
+    try:
+        await events.publish_snapshot(run.id, snapshot(run))
+    except redis.exceptions.RedisError:
+        logger.warning("进度发布失败（Redis 不可达）run=%s status=%s", run.id, run.status)
 
 
 async def create(

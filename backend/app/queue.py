@@ -5,10 +5,15 @@ enqueue 以 run id 作为 job id——重复投递同一 run 不会二次执行�
 """
 import uuid
 
-from arq import create_pool
-from arq.connections import ArqRedis, RedisSettings
+from arq import ArqRedis
+from arq.connections import RedisSettings
 
 from app.config import get_settings
+
+# 与 events.REDIS_TIMEOUT_SECONDS 同口径：半开连接（wslrelay 残留监听）下
+# enqueue 必须秒级失败为 RedisError（路由翻 503），不能悬挂。
+# 不用 create_pool：它在创建时 ping，半开连接下这个 ping 先悬挂。
+REDIS_TIMEOUT_SECONDS = 3.0
 
 _pool: ArqRedis | None = None
 
@@ -16,7 +21,17 @@ _pool: ArqRedis | None = None
 async def _get_pool() -> ArqRedis:
     global _pool
     if _pool is None:
-        _pool = await create_pool(RedisSettings.from_dsn(get_settings().redis_url))
+        settings = RedisSettings.from_dsn(get_settings().redis_url)
+        _pool = ArqRedis(
+            host=settings.host,
+            port=settings.port,
+            db=settings.database,
+            username=settings.username or None,
+            password=settings.password or None,
+            ssl=settings.ssl,
+            socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
+            socket_timeout=REDIS_TIMEOUT_SECONDS,
+        )
     return _pool
 
 

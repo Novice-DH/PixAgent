@@ -14,11 +14,20 @@ from app.config import get_settings
 
 # SSE 空闲心跳：15 秒无消息发 ping 注释帧，防代理掐闲连接
 IDLE_HEARTBEAT_SECONDS = 15.0
+# Redis 命令超时：半开连接（如 Windows Docker Desktop 停容器后 wslrelay 残留监听）
+# 会让无超时的命令永久悬挂——故障必须在秒级显形。发布失败由 runs._publish 捕获，
+# 订阅侧 get_message 用显式 timeout 参数，不受此默认值影响。
+REDIS_TIMEOUT_SECONDS = 3.0
 
 
 @cache
 def _redis() -> Redis:
-    return Redis.from_url(get_settings().redis_url, decode_responses=True)
+    return Redis.from_url(
+        get_settings().redis_url,
+        decode_responses=True,
+        socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
+        socket_timeout=REDIS_TIMEOUT_SECONDS,
+    )
 
 
 def channel_for(run_id: uuid.UUID) -> str:

@@ -14,6 +14,7 @@ from app.models.asset import Asset
 from app.models.edit_history import EditHistory
 from app.models.edit_session import EditSession
 from app.schemas.asset import AssetOut
+from app.schemas.run import RunOut
 from app.storage import signed_url
 
 MAX_WALL_ASSETS = 12
@@ -38,6 +39,7 @@ class SessionOut(BaseModel):
     id: uuid.UUID
     title: str
     revision: int
+    history_seq: int
     current_asset_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
@@ -51,19 +53,48 @@ class WallAssetOut(BaseModel):
 class SessionDetailOut(SessionOut):
     document: LayerDocument
     wall: list[WallAssetOut]
+    previous_document: LayerDocument | None = None
+    can_undo: bool = False
+    can_redo: bool = False
 
     @classmethod
-    def of(cls, row: EditSession, wall: list[WallAssetOut]) -> "SessionDetailOut":
+    def of(
+        cls,
+        row: EditSession,
+        wall: list[WallAssetOut],
+        *,
+        previous_document: LayerDocument | None = None,
+        can_undo: bool = False,
+        can_redo: bool = False,
+    ) -> "SessionDetailOut":
         return cls(
             id=row.id,
             title=row.title,
             revision=row.revision,
+            history_seq=row.history_seq,
             current_asset_id=row.current_asset_id,
             created_at=row.created_at,
             updated_at=row.updated_at,
             document=LayerDocument.model_validate(row.document),
             wall=wall,
+            previous_document=previous_document,
+            can_undo=can_undo,
+            can_redo=can_redo,
         )
+
+
+class ToolInvokeIn(BaseModel):
+    """界面直发工具：tool 名 + 任意参数字典（服务端按注册表模型校验）。"""
+
+    tool: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolInvokeOut(BaseModel):
+    """受理即完成也是受理：同步工具 run 已终态、session 已更新；异步工具 run 排队中。"""
+
+    run: RunOut
+    session: SessionDetailOut
 
 
 def wall_out(position: int, asset: Asset) -> WallAssetOut:

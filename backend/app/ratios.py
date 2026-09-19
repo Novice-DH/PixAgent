@@ -27,3 +27,15 @@ DELIVERY_RATIOS: frozenset[Ratio] = frozenset(
 def size_for(ratio: Ratio) -> tuple[int, int]:
     """比例 → (宽, 高)；未知比例由 Pydantic 枚举校验在入口拦截。"""
     return RATIO_SIZES[ratio]
+
+
+def parts_of(ratio: Ratio) -> tuple[int, int]:
+    """比例 → (宽比, 高比) 原子对；裁剪居中适配按纵横比计算，不用像素尺寸。"""
+    parts = {
+        Ratio.ONE_ONE: (1, 1),
+        Ratio.FOUR_FIVE: (4, 5),
+        Ratio.THREE_FOUR: (3, 4),
+        Ratio.NINE_SIXTEEN: (9, 16),
+        Ratio.SIXTEEN_NINE: (16, 9),
+    }
+    return parts[ratio]

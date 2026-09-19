@@ -12,15 +12,18 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import queue
+from app.layers import LayerDocument
 from app.models.tool_run import ToolRun
 from app.providers import ProviderError
 from app.services import assets, runs, sessions
 from app.tools import UnknownTool, spec_of
+from app.tools.context import ToolError
 
 logger = logging.getLogger(__name__)
 
 TOOL_TASK = "run_tool"
 EXECUTION_FAILURE_MESSAGE = "执行失败，请重试"
+SESSION_REQUIRED_MESSAGE = "此工具需要在编辑会话中使用"
 
 
 class InvalidParams(Exception):
@@ -56,14 +59,24 @@ async def submit(
     params: dict[str, Any],
     session_id: uuid.UUID | None = None,
 ) -> ToolRun:
-    """受理：服务端校验 → 落 run → 投递统一任务；job id = run id 幂等。
+    """受理：服务端校验 → 落 run → 按工具的执行通道分叉。
 
-    会话内调用传 session_id（产出经 _record 进图片墙）；创作页直发不传。
+    queued=False（文档工具）：毫秒级纯计算不进队列——同步 execute 后 refresh，
+    202 响应一次带回终态 run 与新会话，前端零轮询；queued=True（像素/生成）：
+    投递统一任务，job id = run id 幂等。session_required 的工具缺会话上下文
+    直接 InvalidParams——受理期就挡下，不浪费一次落库。
     """
+    spec = spec_of(tool)
+    if spec.session_required and session_id is None:
+        raise InvalidParams(SESSION_REQUIRED_MESSAGE)
     validate(tool, params)
     run = await runs.create(
         session, user_id, tool, _normalize(tool, params), session_id=session_id
     )
+    if not spec.queued:
+        await execute(session, run)
+        await session.refresh(run)
+        return run
     await queue.enqueue(TOOL_TASK, run.id)
     return run
 
@@ -79,7 +92,7 @@ async def execute(session: AsyncSession, run: ToolRun) -> None:
         result = await spec_of(tool).handler(session, run)
         await _record(session, run, result)
         await runs.finish_succeeded(session, run, result)
-    except (ProviderError, UnknownTool) as error:
+    except (ProviderError, UnknownTool, ToolError) as error:
         # 与未预期分支同款先回滚再落终态：外壳是全工具共用的，不能假设 handler
         # 抛明确异常时没留脏状态——rollback 后按主键重载，错误信息保留原文
         await session.rollback()
@@ -95,10 +108,12 @@ async def execute(session: AsyncSession, run: ToolRun) -> None:
             await runs.finish_failed(session, fresh, EXECUTION_FAILURE_MESSAGE)
 
 
-async def _record(session: AsyncSession, run: ToolRun, result: dict[str, Any]) -> None:
-    """会话留痕：工具产出并入图片墙 + 写编辑记录（action=tool 名）——不改当前图。
+async def _record(session: AsyncSession, run: ToolRun, result: dict[str, Any] | None) -> None:
+    """产出采用策略分层：result 的形态决定走哪条 apply_edit 通道。
 
-    run 无会话（创作页直发）不留痕；会话已删静默返回——异步执行时用户
+    含 document（文档工具）→ 文档变化入库；含 adopt_asset_id（像素工具）→
+    产出直接采用为当前图；仅 asset_ids（生成类）→ 只进墙不切当前图、revision
+    不变。run 无会话（创作页直发）不留痕；会话已删静默返回——异步执行时用户
     可能已经删掉会话，产出无处安放也不该让执行失败。
     """
     if run.session_id is None:
@@ -107,12 +122,43 @@ async def _record(session: AsyncSession, run: ToolRun, result: dict[str, Any]) -
         row = await sessions.load(session, run.session_id)
     except sessions.SessionNotFound:
         return
+    result = result or {}
     asset_ids = [
         asset.id
-        for raw_id in (result or {}).get("asset_ids") or []
+        for raw_id in result.get("asset_ids") or []
         if (asset := await assets.get_for_user(session, run.user_id, uuid.UUID(str(raw_id))))
         is not None
     ]
+    if result.get("document") is not None:
+        await sessions.apply_edit(
+            session,
+            row,
+            run.tool,
+            params=run.params,
+            document=LayerDocument.model_validate(result["document"]),
+            extra_assets=asset_ids,
+            result=_history_result(result),
+        )
+        return
+    adopt_raw = result.get("adopt_asset_id")
+    if adopt_raw:
+        adopt = await assets.get_for_user(session, run.user_id, uuid.UUID(str(adopt_raw)))
+        if adopt is not None:
+            await sessions.apply_edit(
+                session,
+                row,
+                run.tool,
+                params=run.params,
+                current=adopt,
+                extra_assets=[*asset_ids, adopt.id],
+                result=_history_result(result),
+            )
+            return
     await sessions.record_result(
         session, row, action=run.tool, params=run.params, result=result, asset_ids=asset_ids
     )
+
+
+def _history_result(result: dict[str, Any]) -> dict[str, Any]:
+    """历史 result 不重复存整份新文档——after 快照已含 document，防 JSONB 翻倍。"""
+    return {key: value for key, value in result.items() if key != "document"}

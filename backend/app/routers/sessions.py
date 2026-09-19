@@ -1,26 +1,34 @@
 """编辑会话路由：协议与状态码翻译；规则与事务在服务层。
 
-会话接口全程不碰 Redis 与队列——纯同步 CRUD 事务。
+会话接口全程不碰队列——撤销/重做是快照恢复的同步事务；tools 端点受理后
+由 services.tools 分叉（文档工具同步执行、像素工具投队列）。
 """
 import uuid
 
+import redis.exceptions
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.db import SessionDep
 from app.deps import CurrentUser
 from app.schemas.agent import MessageIn, TurnOut
+from app.schemas.run import RunOut
 from app.schemas.session import (
     HistoryOut,
     SessionCreateIn,
     SessionDetailOut,
     SessionOut,
     SessionPatchIn,
+    ToolInvokeIn,
+    ToolInvokeOut,
     wall_out,
 )
 from app.services import agent as agent_service
-from app.services import sessions
+from app.services import sessions, tools
 
 router = APIRouter(tags=["sessions"])
+
+NO_UNDO_MESSAGE = "没有可撤销的操作"
+NO_REDO_MESSAGE = "没有可重做的操作"
 
 
 @router.post("/sessions", response_model=SessionDetailOut, status_code=status.HTTP_201_CREATED)
@@ -58,6 +66,7 @@ async def list_sessions(
             id=row.id,
             title=row.title,
             revision=row.revision,
+            history_seq=row.history_seq,
             current_asset_id=row.current_asset_id,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -77,7 +86,11 @@ async def _detail(session, user_id: uuid.UUID, session_id: uuid.UUID) -> Session
         wall_out(position, asset)
         for position, asset in await sessions.wall_assets(session, row.id)
     ]
-    return SessionDetailOut.of(row, wall)
+    previous = await sessions.previous_document(session, row)
+    can_undo, can_redo = await sessions.undo_state(session, row)
+    return SessionDetailOut.of(
+        row, wall, previous_document=previous, can_undo=can_undo, can_redo=can_redo
+    )
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailOut)
@@ -118,6 +131,88 @@ async def get_session_history(
             status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
         ) from None
     return [HistoryOut.of(row) for row in rows]
+
+
+@router.post(
+    "/sessions/{session_id}/tools",
+    response_model=ToolInvokeOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def invoke_session_tool(
+    session_id: uuid.UUID,
+    payload: ToolInvokeIn,
+    user: CurrentUser,
+    session: SessionDep,
+) -> ToolInvokeOut:
+    """界面直发工具：202 受理即完成也是受理——同步工具响应一次带回终态 run 与新会话。"""
+    try:
+        row = await sessions.get_for_user(session, user.id, session_id)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    # 同步执行可能 rollback（失败落终态前）：会话与用户对象随后都会过期，
+    # 之后只允许使用原始值——user_id / session_id 在此先捕获
+    user_id = user.id
+    try:
+        run = await tools.submit(session, user_id, payload.tool, payload.params, session_id=row.id)
+    except tools.InvalidParams as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from None
+    except tools.UnknownTool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="工具不存在"
+        ) from None
+    except redis.exceptions.RedisError:
+        # 异步工具受理要投队列：队列不可达是环境故障而非用户错误，
+        # 与生图受理同一 503 语义（同步文档工具不触碰这条路径）
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="队列服务暂时不可用，请稍后再试",
+        ) from None
+    return ToolInvokeOut(
+        run=await RunOut.of(session, run),
+        session=await _detail(session, user_id, session_id),
+    )
+
+
+@router.post("/sessions/{session_id}/undo", response_model=SessionDetailOut)
+async def undo_session(
+    session_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> SessionDetailOut:
+    user_id = user.id  # undo 的并发落败路径会 rollback，之后只用原始值
+    try:
+        row = await sessions.get_for_user(session, user_id, session_id)
+        await sessions.undo(session, row)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    except sessions.CannotUndo:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=NO_UNDO_MESSAGE
+        ) from None
+    return await _detail(session, user_id, session_id)
+
+
+@router.post("/sessions/{session_id}/redo", response_model=SessionDetailOut)
+async def redo_session(
+    session_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> SessionDetailOut:
+    user_id = user.id
+    try:
+        row = await sessions.get_for_user(session, user_id, session_id)
+        await sessions.redo(session, row)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    except sessions.CannotRedo:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=NO_REDO_MESSAGE
+        ) from None
+    return await _detail(session, user_id, session_id)
 
 
 @router.post(

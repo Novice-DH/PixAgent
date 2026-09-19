@@ -1,6 +1,7 @@
 /** 编辑会话 API：镜像后端全部结构（LayerDocument / 详情 / 图片墙 / 历史）。
  * 全部走统一 client（Cookie 自动携带）；签名 URL 由后端现算，前端只消费。 */
 import type { Asset } from '@/api/assets'
+import type { Run } from '@/api/runs'
 import { api } from '@/api/client'
 
 export type LayerKind = 'image' | 'text' | 'shape'
@@ -38,6 +39,8 @@ export interface Session {
   id: string
   title: string
   revision: number
+  /** 撤销指针：当前所处历史位置 */
+  history_seq: number
   current_asset_id: string
   created_at: string
   updated_at: string
@@ -51,6 +54,15 @@ export interface WallAsset {
 export interface SessionDetail extends Session {
   document: LayerDocument
   wall: WallAsset[]
+  /** 当前条目的 before 快照文档——对比模式的"前"侧；无快照为 null */
+  previous_document: LayerDocument | null
+  can_undo: boolean
+  can_redo: boolean
+}
+
+export interface ToolInvokeResult {
+  run: Run
+  session: SessionDetail
 }
 
 export interface HistoryEntry {
@@ -61,11 +73,19 @@ export interface HistoryEntry {
   created_at: string
 }
 
-/** 编辑动作中文案（编辑记录用；与后端注册表 label 手工同步，前端工具面板期整体删除）。 */
+/** 编辑动作中文案（编辑记录/步骤卡用；与后端注册表 label 手工同步）。 */
 export const ACTION_LABELS: Record<string, string> = {
   create_session: '新建会话',
   switch_current: '切换当前图',
   generate_image: '生成图片',
+  remove_background: '去背景',
+  adjust_image: '调色',
+  crop_canvas: '裁剪',
+  flip_layer: '翻转',
+  set_layer_opacity: '透明度',
+  reorder_layer: '图层顺序',
+  scale_layer: '缩放',
+  rotate_layer: '旋转',
 }
 
 export function actionLabel(action: string): string {
@@ -110,4 +130,12 @@ export const sessionsApi = {
   patch: (sessionId: string, input: SessionPatchInput) =>
     expectJson(api.patch<SessionDetail>(`/sessions/${sessionId}`, input)),
   history: (sessionId: string) => expectJson(api.get<HistoryEntry[]>(`/sessions/${sessionId}/history`)),
+  invoke: (sessionId: string, tool: string, params: Record<string, unknown> = {}) =>
+    expectJson(
+      api.post<ToolInvokeResult>(`/sessions/${sessionId}/tools`, { tool, params }),
+    ),
+  undo: (sessionId: string) =>
+    expectJson(api.post<SessionDetail>(`/sessions/${sessionId}/undo`)),
+  redo: (sessionId: string) =>
+    expectJson(api.post<SessionDetail>(`/sessions/${sessionId}/redo`)),
 }
