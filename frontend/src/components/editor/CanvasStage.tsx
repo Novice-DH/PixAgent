@@ -1,13 +1,14 @@
 /** 画布舞台：按 LayerDocument 渲染（image 层），交互=平移缩放 + 图层点选 + 裁剪框 + 前后对比。
  * 几何与服务端拍平共享同一模型：中心原点（x + width/2、offsetX = width/2）——
  * 旋转绕图层中心、负缩放镜像，两端必须逐像素一致，否则所见非所得。
+ * 对比模式按"前"侧文档的变换与画幅渲染（双 DocumentLayer），不是简单拉伸原始位图。
  * 视图状态来自 canvasView store；裁剪/对比瞬态来自 editorUi store。 */
 import { useEffect, useRef } from 'react'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Group, Image as KonvaImage, Layer, Line, Rect, Stage, Transformer } from 'react-konva'
 
-import type { LayerDocument } from '@/api/sessions'
+import type { Layer as DocumentLayer, LayerDocument } from '@/api/sessions'
 import { useCanvasImage } from '@/hooks/useCanvasImage'
 import { useElementSize } from '@/hooks/useElementSize'
 import { ZOOM_STEP, useCanvasView } from '@/stores/canvasView'
@@ -16,18 +17,60 @@ import { useEditorUi, type CropRect as NormalizedCropRect } from '@/stores/edito
 interface CanvasStageProps {
   sessionId: string
   document: LayerDocument
-  imageUrl: string | null
-  /** 对比模式"前"侧位图（previous_document 的当前资产） */
-  previousImageUrl: string | null
+  /** 对比模式"前"侧文档：按它的变换与画幅渲染（null = 无前文档，对比禁用） */
+  previousDocument: LayerDocument | null
+  /** asset_id → 签名 URL（图片墙现算，前端只消费） */
+  resolveAssetUrl: (assetId: string | null) => string | null
 }
 
 const MIN_CROP_PX = 32 // 与后端 MIN_CROP 一致：裁出更小的画布后续链路不接受
 
+/** 单图层渲染：中心原点 + transform 四要素 + opacity——与服务端拍平同一几何。 */
+function TransformedLayerImage({
+  layer,
+  url,
+  viewX,
+  viewY,
+  scale,
+  selected = false,
+  onSelect,
+}: {
+  layer: DocumentLayer
+  url: string | null
+  viewX: number
+  viewY: number
+  scale: number
+  selected?: boolean
+  onSelect?: () => void
+}) {
+  const bitmap = useCanvasImage(url)
+  if (!bitmap) return null
+  return (
+    <KonvaImage
+      image={bitmap}
+      x={viewX + (layer.transform.x + layer.width / 2) * scale}
+      y={viewY + (layer.transform.y + layer.height / 2) * scale}
+      offsetX={layer.width / 2}
+      offsetY={layer.height / 2}
+      width={layer.width}
+      height={layer.height}
+      scaleX={layer.transform.scale_x}
+      scaleY={layer.transform.scale_y}
+      rotation={layer.transform.rotation}
+      opacity={layer.opacity}
+      onClick={onSelect}
+      onTap={onSelect}
+      stroke={selected ? '#8fbf4d' : undefined}
+      strokeWidth={selected ? 1.5 / scale : 0}
+    />
+  )
+}
+
 export default function CanvasStage({
   sessionId,
   document: doc,
-  imageUrl,
-  previousImageUrl,
+  previousDocument,
+  resolveAssetUrl,
 }: CanvasStageProps) {
   const [containerRef, size] = useElementSize<HTMLDivElement>()
   // 视图状态按字段订阅：动作引用稳定，数值变化才重渲染
@@ -38,8 +81,6 @@ export default function CanvasStage({
   const fit = useCanvasView((state) => state.fit)
   const zoomBy = useCanvasView((state) => state.zoomBy)
   const pan = useCanvasView((state) => state.pan)
-  const bitmap = useCanvasImage(imageUrl)
-  const previousBitmap = useCanvasImage(previousImageUrl)
   const fitKeyRef = useRef<string | null>(null)
 
   const cropOpen = useEditorUi((state) => state.cropOpen)
@@ -86,6 +127,8 @@ export default function CanvasStage({
   const handleLayerClick = (layerId: string) => {
     if (!cropOpen && !compareOpen) selectLayer(layerId)
   }
+
+  const imageLayers = doc.layers.filter((layer) => layer.visible && layer.kind === 'image')
 
   // ---- 裁剪框几何：编辑态以像素矩形工作，提交前归一化 ----
   const docX = x
@@ -178,49 +221,43 @@ export default function CanvasStage({
               shadowBlur={28}
               shadowOffsetY={10}
             />
-            {doc.layers
-              .filter((layer) => layer.visible && layer.kind === 'image')
-              .map((layer) => {
-                // 中心原点渲染：与服务端拍平同一几何（旋转绕图层中心、负缩放镜像）
-                if (!bitmap) return null
-                return (
-                  <KonvaImage
-                    key={layer.id}
-                    image={bitmap}
-                    x={x + (layer.transform.x + layer.width / 2) * scale}
-                    y={y + (layer.transform.y + layer.height / 2) * scale}
-                    offsetX={layer.width / 2}
-                    offsetY={layer.height / 2}
-                    width={layer.width}
-                    height={layer.height}
-                    scaleX={layer.transform.scale_x}
-                    scaleY={layer.transform.scale_y}
-                    rotation={layer.transform.rotation}
-                    opacity={layer.opacity}
-                    onClick={() => handleLayerClick(layer.id)}
-                    onTap={() => handleLayerClick(layer.id)}
-                    stroke={selectedLayerId === layer.id ? '#8fbf4d' : undefined}
-                    strokeWidth={selectedLayerId === layer.id ? 1.5 / scale : 0}
-                  />
-                )
-              })}
+            {imageLayers.map((layer) => (
+              <TransformedLayerImage
+                key={layer.id}
+                layer={layer}
+                url={resolveAssetUrl(layer.asset_id)}
+                viewX={x}
+                viewY={y}
+                scale={scale}
+                selected={selectedLayerId === layer.id}
+                onSelect={() => handleLayerClick(layer.id)}
+              />
+            ))}
           </Layer>
 
-          {/* 对比模式：左右分屏双文档，底部滑杆拖动分割线 */}
-          {compareOpen && previousBitmap && (
+          {/* 对比模式：左半按"前"侧文档渲染（白底 + 各图层变换），右半露出当前画布 */}
+          {compareOpen && previousDocument && (
             <Layer listening={false}>
               <Group clipX={docX} clipY={docY} clipWidth={splitX - docX} clipHeight={docH}>
-                <KonvaImage image={previousBitmap} x={docX} y={docY} width={docW} height={docH} />
-              </Group>
-              <Group
-                clipX={splitX}
-                clipY={docY}
-                clipWidth={docX + docW - splitX}
-                clipHeight={docH}
-              >
-                {bitmap && (
-                  <KonvaImage image={bitmap} x={docX} y={docY} width={docW} height={docH} />
-                )}
+                <Rect
+                  x={docX}
+                  y={docY}
+                  width={previousDocument.width * scale}
+                  height={previousDocument.height * scale}
+                  fill="#ffffff"
+                />
+                {previousDocument.layers
+                  .filter((layer) => layer.visible && layer.kind === 'image')
+                  .map((layer) => (
+                    <TransformedLayerImage
+                      key={layer.id}
+                      layer={layer}
+                      url={resolveAssetUrl(layer.asset_id)}
+                      viewX={x}
+                      viewY={y}
+                      scale={scale}
+                    />
+                  ))}
               </Group>
               <Line
                 points={[splitX, docY, splitX, docY + docH]}
@@ -241,7 +278,13 @@ export default function CanvasStage({
                 height={docY + docH - (cropPixel.y + cropPixel.height)}
                 fill={shade}
               />
-              <Rect x={docX} y={cropPixel.y} width={cropPixel.x - docX} height={cropPixel.height} fill={shade} />
+              <Rect
+                x={docX}
+                y={cropPixel.y}
+                width={cropPixel.x - docX}
+                height={cropPixel.height}
+                fill={shade}
+              />
               <Rect
                 x={cropPixel.x + cropPixel.width}
                 y={cropPixel.y}

@@ -129,14 +129,11 @@ export default function EditorPage() {
     )
   }
 
-  const currentAsset = detail.wall.find((entry) => entry.asset.id === detail.current_asset_id)
-  // 对比"前"侧：previous_document 底图层指向的资产（无快照时按钮本身禁用）
-  const previousBaseAssetId = detail.previous_document?.layers.at(-1)?.asset_id ?? null
-  const previousAsset =
-    previousBaseAssetId !== null
-      ? detail.wall.find((entry) => entry.asset.id === previousBaseAssetId)
-      : undefined
   const switchPending = patchSession.isPending
+
+  // asset_id → 签名 URL：图片墙现算，前端只消费（画布与对比模式共用）
+  const resolveAssetUrl = (assetId: string | null) =>
+    assetId ? (detail.wall.find((entry) => entry.asset.id === assetId)?.asset.url ?? null) : null
 
   const confirmCrop = () => {
     if (!cropRect) return
@@ -224,8 +221,8 @@ export default function EditorPage() {
           <CanvasStage
             sessionId={sessionId}
             document={detail.document}
-            imageUrl={currentAsset?.asset.url ?? null}
-            previousImageUrl={compareOpen ? (previousAsset?.asset.url ?? null) : null}
+            previousDocument={detail.previous_document}
+            resolveAssetUrl={resolveAssetUrl}
           />
         </div>
 

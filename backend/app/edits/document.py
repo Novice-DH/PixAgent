@@ -20,7 +20,7 @@ def _target(document: LayerDocument, layer_id: str) -> Layer:
     for layer in document.layers:
         if layer.id == layer_id:
             return layer
-    raise LayerMissing(layer_id)
+    raise LayerMissing(f"图层 {layer_id} 不存在或不可编辑")
 
 
 def flip(document: LayerDocument, layer_id: str, *, direction: str) -> LayerDocument:

@@ -64,13 +64,13 @@ def resolve_layer(document: LayerDocument, layer_id: str | None = None) -> Layer
         for layer in document.layers:
             if layer.id == layer_id:
                 if layer.kind != LayerKind.image:
-                    raise LayerMissing(layer_id)
+                    raise LayerMissing(f"图层 {layer_id} 不存在或不可编辑")
                 return layer
-        raise LayerMissing(layer_id)
+        raise LayerMissing(f"图层 {layer_id} 不存在或不可编辑")
     for layer in reversed(document.layers):
         if layer.kind == LayerKind.image and layer.visible:
             return layer
-    raise LayerMissing
+    raise LayerMissing("画布上没有可编辑的图像图层")
 
 
 def document_of(asset: Asset) -> LayerDocument:
