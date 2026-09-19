@@ -184,7 +184,10 @@ export default function CanvasStage({
     }
   }
 
+  // 只消费 Stage 自身的拖拽（平移）：裁剪框/对比手柄的 dragmove 会冒泡到 Stage，
+  // 不加守卫会把视图原点写成子节点坐标（画布瞬移）
   const syncPan = (event: KonvaEventObject<DragEvent>) => {
+    if (event.target !== event.target.getStage()) return
     pan(event.target.x(), event.target.y())
   }
 
@@ -426,10 +429,20 @@ export default function CanvasStage({
                 anchorSize={8}
                 anchorCornerRadius={2}
                 borderStroke="#d9ff6e"
-                // 拖角缩放实时夹取：边界与 MIN_CROP 同步生效，越界立即停住
+                // 拖角缩放实时夹取：边界与 MIN_CROP 同步生效，越界立即停住；
+                // 锁定比例时以更受限的一轴恢复纵横比，避免触界后比例被打破
                 boundBoxFunc={(_oldBox, newBox) => {
-                  const width = Math.min(docW, Math.max(MIN_CROP_PX, newBox.width))
-                  const height = Math.min(docH, Math.max(MIN_CROP_PX, newBox.height))
+                  let width = Math.min(docW, Math.max(MIN_CROP_PX, newBox.width))
+                  let height = Math.min(docH, Math.max(MIN_CROP_PX, newBox.height))
+                  if (cropRatio !== 'free') {
+                    const [ratioW, ratioH] = cropRatio.split(':').map(Number) as [number, number]
+                    const target = ratioW / ratioH
+                    if (width / height > target) {
+                      width = height * target
+                    } else {
+                      height = width / target
+                    }
+                  }
                   const boxX = Math.min(Math.max(newBox.x, docX), docX + docW - width)
                   const boxY = Math.min(Math.max(newBox.y, docY), docY + docH - height)
                   return { ...newBox, x: boxX, y: boxY, width, height }

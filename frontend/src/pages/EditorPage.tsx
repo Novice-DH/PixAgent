@@ -89,8 +89,10 @@ export default function EditorPage() {
         closeCompare()
         return
       }
-      // 视图快捷键只在无修饰键时生效（按住 meta/shift/alt 不触发）
+      // 视图快捷键只在无修饰键时生效（按住 meta/shift/alt 不触发）；
+      // 裁剪态与滚轮同纪律：视图操作全部让位给裁剪框
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (cropOpen) return
       if (event.key === '0') {
         if (docWidth && docHeight) {
           event.preventDefault()
@@ -126,6 +128,7 @@ export default function EditorPage() {
     fit,
     docWidth,
     docHeight,
+    cropOpen,
   ])
 
   // /editor 未选会话：空态引导去创作
