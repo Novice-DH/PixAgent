@@ -27,11 +27,16 @@ interface EditorToolbarProps {
   adjustOpen: boolean
   layersOpen: boolean
   compareOpen: boolean
+  backgroundOpen: boolean
+  expandOpen: boolean
   onFlipHorizontal: () => void
   onFlipVertical: () => void
   onRemoveBackground: () => void
   onToggleAdjust: () => void
   onToggleLayers: () => void
+  onToggleBackground: () => void
+  onToggleExpand: () => void
+  onUpscale: () => void
   onUndo: () => void
   onRedo: () => void
   onToggleCompare: () => void
@@ -84,11 +89,16 @@ export default function EditorToolbar({
   adjustOpen,
   layersOpen,
   compareOpen,
+  backgroundOpen,
+  expandOpen,
   onFlipHorizontal,
   onFlipVertical,
   onRemoveBackground,
   onToggleAdjust,
   onToggleLayers,
+  onToggleBackground,
+  onToggleExpand,
+  onUpscale,
   onUndo,
   onRedo,
   onToggleCompare,
@@ -189,6 +199,26 @@ export default function EditorToolbar({
             <ToolButton label="水平翻转" onClick={onFlipHorizontal} disabled={action.busy} />
             <ToolButton label="垂直翻转" onClick={onFlipVertical} disabled={action.busy} />
             <ToolButton label="去背景" onClick={onRemoveBackground} disabled={action.busy} />
+            <ToolButton
+              label="换背景"
+              pressed={backgroundOpen}
+              onClick={onToggleBackground}
+              disabled={action.busy}
+              title="生成式替换背景（可出多张候选）"
+            />
+            <ToolButton
+              label="扩图"
+              pressed={expandOpen}
+              onClick={onToggleExpand}
+              disabled={action.busy}
+              title="把画布扩展到目标比例"
+            />
+            <ToolButton
+              label="超分"
+              onClick={onUpscale}
+              disabled={action.busy}
+              title="等比放大 2 倍并提升清晰度"
+            />
             <ToolButton
               label="调色"
               pressed={adjustOpen}

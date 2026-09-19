@@ -6,7 +6,13 @@ from collections.abc import Callable
 from functools import lru_cache
 
 from app.config import get_settings
-from app.providers.base import GenerateRequest, ImageProvider, ProgressCallback, ProviderError
+from app.providers.base import (
+    EditRequest,
+    GenerateRequest,
+    ImageProvider,
+    ProgressCallback,
+    ProviderError,
+)
 from app.providers.dashscope import DashscopeImageProvider
 from app.providers.mock import MockImageProvider
 
@@ -26,6 +32,7 @@ def get_image_provider() -> ImageProvider:
 
 
 __all__ = [
+    "EditRequest",
     "GenerateRequest",
     "ImageProvider",
     "ProgressCallback",

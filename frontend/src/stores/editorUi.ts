@@ -3,7 +3,7 @@
  * canvasView，绝不混入。预览是渲染态不落数据：文档回传新值即撤。 */
 import { create } from 'zustand'
 
-export type EditorPanel = 'layers' | 'adjust' | null
+export type EditorPanel = 'layers' | 'adjust' | 'background' | 'expand' | null
 
 /** 调色拖动期预览：九参数当前值（与 lib/adjustPreview 对齐，sharpness/clarity 不参与） */
 export interface AdjustPreviewValues {

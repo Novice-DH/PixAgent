@@ -312,3 +312,54 @@ def test_remove_background_forced_rembg_without_dependency_raises():
         assert "rembg" in str(error.value)
     finally:
         settings.matting_provider = original
+
+
+# ---- S12 纯函数：编辑边长夹取与扩图包住画幅 ----
+
+
+def test_fit_edit_size_lifts_short_edge_to_512():
+    # 短边不足 512 等比抬到 512：426×240 → 908×512（两步各自取整，先抬后压）
+    from app.providers.dashscope import _fit_edit_size
+
+    assert _fit_edit_size(426, 240) == (908, 512)
+
+
+def test_fit_edit_size_presses_long_edge_to_2048():
+    # 长边超 2048 等比压回：8000×4000 → 2048×1024
+    from app.providers.dashscope import _fit_edit_size
+
+    assert _fit_edit_size(8000, 4000) == (2048, 1024)
+
+
+def test_fit_edit_size_keeps_in_range_untouched():
+    from app.providers.dashscope import _fit_edit_size
+
+    assert _fit_edit_size(1024, 768) == (1024, 768)
+
+
+def test_cover_size_widens_landscape_to_sixteen_nine():
+    # 横向图 320×240 扩 16:9 只加宽：426×240 刚好包住原画（B4 锚点）
+    from app.ratios import cover_size
+
+    assert cover_size(320, 240, Ratio.SIXTEEN_NINE) == (426, 240)
+
+
+def test_cover_size_heightens_overwide_to_sixteen_nine():
+    # 超宽图 320×160 扩 16:9 只增高：320×180（短边向比例靠拢、原边不动）
+    from app.ratios import cover_size
+
+    assert cover_size(320, 160, Ratio.SIXTEEN_NINE) == (320, 180)
+
+
+def test_cover_size_widens_portrait_to_square():
+    # 竖图 240×320 扩 1:1 只加宽：320×320
+    from app.ratios import cover_size
+
+    assert cover_size(240, 320, Ratio.ONE_ONE) == (320, 320)
+
+
+def test_cover_size_equal_ratio_untouched():
+    # 等比画幅两分支同值：原样不动（方图扩 1:1）
+    from app.ratios import cover_size
+
+    assert cover_size(400, 400, Ratio.ONE_ONE) == (400, 400)

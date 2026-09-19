@@ -224,11 +224,16 @@ export default function EditorPage() {
           adjustOpen={panel === 'adjust'}
           layersOpen={panel === 'layers'}
           compareOpen={compareOpen}
+          backgroundOpen={panel === 'background'}
+          expandOpen={panel === 'expand'}
           onFlipHorizontal={() => invoke({ tool: 'flip_layer', params: { direction: 'horizontal' } })}
           onFlipVertical={() => invoke({ tool: 'flip_layer', params: { direction: 'vertical' } })}
           onRemoveBackground={() => invoke({ tool: 'remove_background' })}
           onToggleAdjust={() => setPanel('adjust')}
           onToggleLayers={() => setPanel('layers')}
+          onToggleBackground={() => setPanel('background')}
+          onToggleExpand={() => setPanel('expand')}
+          onUpscale={() => invoke({ tool: 'upscale_image', params: { scale: 2 } })}
           onUndo={() => tools.undo.mutate()}
           onRedo={() => tools.redo.mutate()}
           onToggleCompare={() => (compareOpen ? closeCompare() : openCompare())}

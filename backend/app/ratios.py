@@ -39,3 +39,17 @@ def parts_of(ratio: Ratio) -> tuple[int, int]:
         Ratio.SIXTEEN_NINE: (16, 9),
     }
     return parts[ratio]
+
+
+def cover_size(width: int, height: int, ratio: Ratio) -> tuple[int, int]:
+    """刚好包住原图的目标比例画幅（扩图语义：主体零裁切）。
+
+    短边向比例靠拢、原边不动：两分支按 width×rh 与 height×rw 整数比较决定动
+    哪条边，整除取整，各边 max(1)；等比时两分支同值（原样不动）。
+    扩图用它而不是生图标准尺寸——标准尺寸服务"从零生成"，套在扩图上要么
+    裁主体要么重采样变形。
+    """
+    ratio_width, ratio_height = parts_of(ratio)
+    if width * ratio_height < height * ratio_width:
+        return max(1, height * ratio_width // ratio_height), height
+    return width, max(1, width * ratio_height // ratio_width)

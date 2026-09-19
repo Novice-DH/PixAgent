@@ -16,14 +16,16 @@ export default function ImageWall({ wall, currentAssetId, disabled = false, onSw
       <span className="shrink-0 text-xs font-medium text-muted">图片墙</span>
       {wall.map(({ position, asset }) => {
         const current = asset.id === currentAssetId
+        // 多候选语义下图片墙的角色是采用器：点非当前图是一次有后果的采用决策
+        const label = current ? '当前图片' : `采用这张（图片 ${position}）`
         return (
           <button
             key={asset.id}
             type="button"
             disabled={disabled || current}
             aria-pressed={current}
-            aria-label={`切换到图片 ${position}（${KIND_LABELS[asset.kind] ?? asset.kind}）`}
-            title={current ? '当前图片' : `切换到图片 ${position}（${KIND_LABELS[asset.kind] ?? asset.kind}）`}
+            aria-label={label}
+            title={label}
             onClick={() => onSwitch(asset.id)}
             className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-control border-2 bg-canvas transition-colors disabled:cursor-default ${
               current ? 'border-brand' : 'border-transparent hover:border-line-strong'
