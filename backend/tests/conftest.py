@@ -73,13 +73,13 @@ async def isolated_redis():
     settings = get_settings()
     original = settings.redis_url
     settings.redis_url = _isolate_redis_url(original)
-    events._redis.cache_clear()
+    events.redis_client.cache_clear()
     await queue.close_queue()
     yield
     await events.close_redis()
     await queue.close_queue()
     settings.redis_url = original
-    events._redis.cache_clear()
+    events.redis_client.cache_clear()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -105,6 +105,22 @@ def credentials() -> dict[str, str]:
 def other_credentials() -> dict[str, str]:
     """第二账号凭据：生成规则与 credentials 完全一致（跨用户用例统一入口）。"""
     return {"username": f"{TEST_USER_PREFIX}{uuid.uuid4().hex[:12]}", "password": TEST_PASSWORD}
+
+
+@pytest.fixture
+async def open_session(client, credentials, request):
+    """注册 + 上传 + 建会话一步到位；parametrize 画幅尺寸用
+    `@pytest.mark.parametrize("open_session", [(320, 240)], indirect=True)`。"""
+    from test_assets import _png_bytes, _register_and_get_client, _upload
+
+    size = getattr(request, "param", (320, 240))
+    await _register_and_get_client(client, credentials["username"])
+    upload = await _upload(client, _png_bytes(size))
+    response = await client.post(
+        "/api/sessions", json={"current_asset_id": upload.json()["id"]}
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 @pytest.fixture(autouse=True)

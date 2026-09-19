@@ -261,3 +261,58 @@ async def test_message_unknown_session_returns_404(client: AsyncClient, credenti
 
     assert response.status_code == 404
     assert response.json()["detail"] == SESSION_NOT_FOUND
+
+
+# ---- S13 选区事实注入 ----
+
+
+async def _select_point(client: AsyncClient, session_id: str, revision: int) -> None:
+    from httpx import AsyncClient as _Client  # noqa: F401  仅类型提示用途
+
+    response = await client.post(
+        f"/api/sessions/{session_id}/selection",
+        json={"revision": revision, "points": [{"x": 0.5, "y": 0.5}]},
+    )
+    assert response.status_code == 200, response.text
+
+
+async def test_canvas_summary_reports_no_selection(
+    client: AsyncClient, credentials, monkeypatch
+) -> None:
+    body = await _setup_session(client, credentials)
+    fake = _install_planner(monkeypatch, _text_reply("好"))
+
+    await _send(client, body["id"], "画布上有什么")
+
+    system = fake.calls[0][0]
+    assert "当前无选区" in system.content
+
+
+async def test_canvas_summary_reports_point_selection(
+    client: AsyncClient, credentials, monkeypatch
+) -> None:
+    body = await _setup_session(client, credentials)
+    await _select_point(client, body["id"], body["revision"])
+    fake = _install_planner(monkeypatch, _text_reply("好"))
+
+    await _send(client, body["id"], "画布上有什么")
+
+    system = fake.calls[0][0]
+    assert "已有选区，1 个标点" in system.content
+
+
+async def test_selection_summary_dispatches_replace_region_directly(
+    client: AsyncClient, credentials, monkeypatch, _no_broker
+) -> None:
+    """已有选区时规划器直接派 replace_region，不再反问重选。"""
+    body = await _setup_session(client, credentials)
+    await _select_point(client, body["id"], body["revision"])
+    fake = _install_planner(monkeypatch, _tool_call("replace_region", {"prompt": "黑色"}))
+
+    turn = await _send(client, body["id"], "把选区里的东西换成黑色")
+
+    assert turn["status"] == "succeeded"
+    assert turn["steps"][0]["tool"] == "replace_region"  # 一步到位
+    assert turn["steps"][0]["run_id"]
+    system = fake.calls[0][0]
+    assert "已有选区" in system.content

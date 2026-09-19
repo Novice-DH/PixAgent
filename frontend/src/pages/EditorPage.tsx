@@ -18,6 +18,7 @@ import { ApiError } from '@/api/client'
 import { ZOOM_STEP, useCanvasView } from '@/stores/canvasView'
 import { useEditorUi } from '@/stores/editorUi'
 import { errorMessage } from '@/hooks/useAuth'
+import { useSelection } from '@/hooks/useSelection'
 import {
   usePatchSession,
   useSession,
@@ -53,6 +54,22 @@ export default function EditorPage() {
   const closeCompare = useEditorUi((state) => state.closeCompare)
   const panel = useEditorUi((state) => state.panel)
   const setPanel = useEditorUi((state) => state.setPanel)
+  const selectMode = useEditorUi((state) => state.selectMode)
+  const setSelectMode = useEditorUi((state) => state.setSelectMode)
+  const selection = useEditorUi((state) => state.selection)
+  const setSelection = useEditorUi((state) => state.setSelection)
+  // 会话切换（侧栏导航不重挂载页面）：选区属于旧会话的画布，切会话即清——
+  // 防止跨会话的幽灵遮罩与选区形状误用（revision 恰好相等时服务端拦不住）
+  useEffect(() => {
+    setSelection(null)
+  }, [sessionId, setSelection])
+  // 选区 mutation：revision 变化（撤销/切图/重做）时本地选区立即作废（hook 内 effect）
+  const {
+    addPoint,
+    addStroke,
+    clearSelection,
+    busy: selectionBusy,
+  } = useSelection(sessionId, detailQuery.data?.revision)
   // 改名失败回退信号：递增触发工具栏把输入框重置回服务端标题
   const [renameFailTick, setRenameFailTick] = useState(0)
   // mutate 引用稳定（react-query 保证）；解构出来供快捷键 effect 作依赖
@@ -87,12 +104,14 @@ export default function EditorPage() {
       if (event.key === 'Escape') {
         closeCrop()
         closeCompare()
+        // Esc 退出选区模式（选区数据保留，由 revision 与一次性消费管理）
+        setSelectMode(null)
         return
       }
       // 视图快捷键只在无修饰键时生效（按住 meta/shift/alt 不触发）；
-      // 裁剪态与滚轮同纪律：视图操作全部让位给裁剪框
+      // 裁剪态与选区态同纪律：视图操作全部让位给当前模式
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      if (cropOpen) return
+      if (cropOpen || selectMode !== null) return
       if (event.key === '0') {
         if (docWidth && docHeight) {
           event.preventDefault()
@@ -123,12 +142,14 @@ export default function EditorPage() {
     undoMutate,
     closeCrop,
     closeCompare,
+    setSelectMode,
     zoomTo,
     stepZoom,
     fit,
     docWidth,
     docHeight,
     cropOpen,
+    selectMode,
   ])
 
   // /editor 未选会话：空态引导去创作
@@ -241,6 +262,18 @@ export default function EditorPage() {
           onCropRatio={(ratio) => setCropRatio(ratio, detail.document.width, detail.document.height)}
           onCropConfirm={confirmCrop}
           onCropCancel={closeCrop}
+          selectMode={selectMode}
+          hasSelection={selection !== null}
+          onSelectMode={(mode) => setSelectMode(mode)}
+          onEraseRegion={() => {
+            if (!selection) return
+            invoke({
+              tool: 'erase_region',
+              params: { mask_asset_id: selection.maskId, revision: selection.revision },
+            })
+          }}
+          onReplaceRegion={() => setPanel('replace')}
+          onClearSelection={clearSelection}
         />
         {patchSession.error && (
           <p role="alert" className="shrink-0 bg-danger/10 px-4 py-1 text-xs text-danger">
@@ -255,12 +288,17 @@ export default function EditorPage() {
             document={detail.document}
             previousDocument={detail.previous_document}
             resolveAssetUrl={resolveAssetUrl}
+            selectMode={selectMode}
+            selectionBusy={selectionBusy || tools.busy}
+            onPointSelect={addPoint}
+            onStrokeCommit={addStroke}
           />
           <CanvasHint
             busyStage={tools.pendingStage}
             busyProgress={tools.pendingProgress}
             cropOpen={cropOpen}
             compareOpen={compareOpen}
+            selectMode={selectMode}
           />
           {panel !== null && (
             <LayerPanel

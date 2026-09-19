@@ -10,6 +10,7 @@ import uuid
 
 import httpx
 import pytest
+import redis.exceptions
 from httpx import AsyncClient
 from test_agent import _install_planner
 from test_assets import _png_bytes, _register_and_get_client, _upload
@@ -626,3 +627,302 @@ async def test_edit_http_500_surfaces_provider_error_without_dirty_session(
     assert status == "failed"
     assert run["error"] is not None and run["error"].startswith("模型服务编辑失败")
     assert detail["revision"] == 1
+
+
+# ---- S13 选区端到端（corner 模式，直呼任务函数） ----
+
+
+async def _select(client: AsyncClient, session_id: str, payload: dict):
+    return await client.post(f"/api/sessions/{session_id}/selection", json=payload)
+
+
+async def test_point_selection_roundtrip_stale_409_and_empty_422(
+    client: AsyncClient, open_session
+) -> None:
+    session = open_session
+
+    created = await _select(
+        client,
+        session["id"],
+        {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]},
+    )
+    assert created.status_code == 200, created.text
+    selection = created.json()
+    assert selection["revision"] == session["revision"]  # revision 匹配
+    assert selection["mask"]["kind"] == "mask"  # 遮罩即资产
+    assert selection["mask"]["has_alpha"] is True
+    assert selection["markers"] == [{"index": 1, "x": 0.5, "y": 0.5}]  # 序号从 1、归一化坐标
+
+    fetched = await client.get(f"/api/sessions/{session['id']}/selection")
+    assert fetched.status_code == 200
+    assert fetched.json()["mask"]["id"] == selection["mask"]["id"]  # 回读一致
+
+    # 三重防护第一重：受理时 revision 不匹配 → 409
+    stale = await _select(
+        client,
+        session["id"],
+        {"revision": session["revision"] + 3, "points": [{"x": 0.5, "y": 0.5}]},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "画布已更新，请重新选择"
+
+    # points 与 strokes 均空 → 422
+    empty = await _select(client, session["id"], {"revision": session["revision"]})
+    assert empty.status_code == 422
+    assert empty.json()["detail"] == "请点选或涂抹选区"
+
+
+async def test_selection_radius_out_of_range_422(client: AsyncClient, open_session) -> None:
+    session = open_session
+
+    response = await _select(
+        client,
+        session["id"],
+        {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}], "radius": 0.001},
+    )
+
+    assert response.status_code == 422  # radius 0.005–0.12 之外拒收
+
+
+async def test_point_selection_append_accumulates_markers(
+    client: AsyncClient, open_session
+) -> None:
+    session = open_session
+
+    await _select(
+        client, session["id"], {"revision": session["revision"], "points": [{"x": 0.3, "y": 0.3}]}
+    )
+    appended = await _select(
+        client,
+        session["id"],
+        {
+            "revision": session["revision"],
+            "points": [{"x": 0.7, "y": 0.7}],
+            "append": True,
+        },
+    )
+
+    assert appended.status_code == 200, appended.text
+    markers = appended.json()["markers"]
+    assert [(m["index"], m["x"], m["y"]) for m in markers] == [
+        (1, 0.3, 0.3),
+        (2, 0.7, 0.7),
+    ]  # 追加是全部点重分割，markers 累积、序号连续
+
+
+async def test_brush_selection_returns_alpha_mask(client: AsyncClient, open_session) -> None:
+    session = open_session
+
+    created = await _select(
+        client,
+        session["id"],
+        {
+            "revision": session["revision"],
+            "strokes": [[{"x": 0.2, "y": 0.5}, {"x": 0.8, "y": 0.5}]],
+        },
+    )
+
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["mask"]["has_alpha"] is True
+    assert body["mask"]["kind"] == "mask"
+    assert body["markers"] == []  # 笔刷没有标点
+
+
+async def test_delete_selection_returns_204_and_get_null(
+    client: AsyncClient, open_session
+) -> None:
+    session = open_session
+    await _select(
+        client, session["id"], {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]}
+    )
+
+    deleted = await client.delete(f"/api/sessions/{session['id']}/selection")
+
+    assert deleted.status_code == 204
+    fetched = await client.get(f"/api/sessions/{session['id']}/selection")
+    assert fetched.status_code == 200
+    assert fetched.json() is None
+
+
+async def test_erase_region_adopts_bumps_revision_clears_selection(
+    client: AsyncClient, open_session, _no_broker
+) -> None:
+    session = open_session
+    selection = (
+        await _select(
+            client,
+            session["id"],
+            {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]},
+        )
+    ).json()
+
+    run, detail = await _run_and_detail(
+        client,
+        session,
+        "erase_region",
+        {"mask_asset_id": selection["mask"]["id"], "revision": session["revision"]},
+    )
+
+    assert run["status"] == "succeeded"
+    assert detail["current_asset_id"] != session["current_asset_id"]  # 产出被采用
+    assert detail["revision"] == 2  # 递增到 2
+    assert detail["can_undo"] is True
+    gone = await client.get(f"/api/sessions/{session['id']}/selection")
+    assert gone.json() is None  # 选区已被清除（一次性消费）
+
+
+async def test_replace_region_requires_prompt_then_adopts_with_selection(
+    client: AsyncClient, open_session, _no_broker
+) -> None:
+    session = open_session
+    selection = (
+        await _select(
+            client,
+            session["id"],
+            {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]},
+        )
+    ).json()
+    mask_asset_id = selection["mask"]["id"]
+
+    missing = await _invoke(
+        client, session["id"], "replace_region", {"mask_asset_id": mask_asset_id}
+    )
+    assert missing.status_code == 422  # prompt 必填——「换成什么」是替换语义的本体
+
+    run, detail = await _run_and_detail(
+        client,
+        session,
+        "replace_region",
+        {"prompt": "黑色陶瓷质感", "mask_asset_id": mask_asset_id, "revision": session["revision"]},
+    )
+    assert run["status"] == "succeeded"
+    assert detail["current_asset_id"] != session["current_asset_id"]
+    assert detail["revision"] == 2
+
+
+async def test_region_tool_after_canvas_switch_reports_expired_selection(
+    client: AsyncClient, open_session, _no_broker
+) -> None:
+    """竞态注入：提交选区与工具执行之间切图（revision 变）→「选区已过期」。"""
+    from test_assets import _png_bytes, _upload
+
+    session = open_session
+    selection = (
+        await _select(
+            client,
+            session["id"],
+            {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]},
+        )
+    ).json()
+    upload = await _upload(client, _png_bytes((300, 200)))
+    switched = await client.patch(
+        f"/api/sessions/{session['id']}", json={"current_asset_id": upload.json()["id"]}
+    )
+    assert switched.status_code == 200
+
+    response = await _invoke(
+        client,
+        session["id"],
+        "erase_region",
+        {"mask_asset_id": selection["mask"]["id"], "revision": session["revision"]},
+    )
+    assert response.status_code == 202
+    run_id = response.json()["run"]["id"]
+    await _run_task(run_id)
+
+    run = (await client.get(f"/api/runs/{run_id}")).json()
+    assert run["status"] == "failed"
+    assert run["error"] == "选区已过期，请重新选择"  # 三重防护第二重：执行时校验
+
+
+async def test_region_tool_without_selection_asks_to_select_first(
+    client: AsyncClient, open_session, _no_broker
+) -> None:
+    session = open_session
+
+    response = await _invoke(client, session["id"], "erase_region", {})
+    assert response.status_code == 202
+    run_id = response.json()["run"]["id"]
+    await _run_task(run_id)
+
+    run = (await client.get(f"/api/runs/{run_id}")).json()
+    assert run["status"] == "failed"
+    assert run["error"] == "请先点选或涂抹要修改的区域"
+
+
+class _BrokenRedis:
+    """Redis 故障替身：所有命令秒级抛连接错误（无悬挂）。"""
+
+    async def get(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("connection refused")
+
+    async def set(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("connection refused")
+
+    async def delete(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("connection refused")
+
+    async def publish(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("connection refused")
+
+
+async def test_selection_endpoints_with_redis_down_fail_bounded(
+    client: AsyncClient, open_session, monkeypatch
+) -> None:
+    """停 Redis：选区接口失败有界（503 明确错误）、API 进程不崩。"""
+    from app import events
+
+    session = open_session
+    monkeypatch.setattr(events, "redis_client", lambda: _BrokenRedis())
+
+    created = await _select(
+        client, session["id"], {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]}
+    )
+    assert created.status_code == 503
+    assert "选区服务暂时不可用" in created.json()["detail"]
+
+    fetched = await client.get(f"/api/sessions/{session['id']}/selection")
+    assert fetched.status_code == 503
+
+    # API 进程不崩：普通会话端点照常响应
+    detail = await client.get(f"/api/sessions/{session['id']}")
+    assert detail.status_code == 200
+
+
+async def test_region_tool_with_redis_down_reports_no_selection_not_500(
+    client: AsyncClient, open_session, _no_broker, monkeypatch
+) -> None:
+    """停 Redis：局部工具报「请先点选或涂抹要修改的区域」而非 500。"""
+    from app import events
+
+    session = open_session
+    original_client = events.redis_client
+    monkeypatch.setattr(events, "redis_client", lambda: _BrokenRedis())
+
+    response = await _invoke(client, session["id"], "erase_region", {})
+    assert response.status_code == 202
+    run_id = response.json()["run"]["id"]
+    await _run_task(run_id)
+
+    run = (await client.get(f"/api/runs/{run_id}")).json()
+    assert run["status"] == "failed"
+    assert run["error"] == "请先点选或涂抹要修改的区域"
+
+    # 恢复后可用：建选区 → 消除成功
+    monkeypatch.setattr(events, "redis_client", original_client)
+    selection = (
+        await _select(
+            client,
+            session["id"],
+            {"revision": session["revision"], "points": [{"x": 0.5, "y": 0.5}]},
+        )
+    ).json()
+    run, detail = await _run_and_detail(
+        client,
+        session,
+        "erase_region",
+        {"mask_asset_id": selection["mask"]["id"], "revision": session["revision"]},
+    )
+    assert run["status"] == "succeeded"
+    assert detail["revision"] == 2

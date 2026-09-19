@@ -1,5 +1,7 @@
-/** 画布情境提示（画布顶部居中浮层，覆盖式不推动画布）：busy 进度 / 裁剪指引 / 对比指引三态。
+/** 画布情境提示（画布顶部居中浮层，覆盖式不推动画布）：busy 进度 / 裁剪指引 / 对比指引 / 选区两态。
  * pointer-events-none 不挡画布交互；animate-pop 入场。进度条视觉最小 4% 纪律保持。 */
+import type { SelectMode } from '@/stores/editorUi'
+
 const MIN_PROGRESS_PERCENT = 4
 
 interface CanvasHintProps {
@@ -7,9 +9,16 @@ interface CanvasHintProps {
   busyProgress: number
   cropOpen: boolean
   compareOpen: boolean
+  selectMode: SelectMode | null
 }
 
-export default function CanvasHint({ busyStage, busyProgress, cropOpen, compareOpen }: CanvasHintProps) {
+export default function CanvasHint({
+  busyStage,
+  busyProgress,
+  cropOpen,
+  compareOpen,
+  selectMode,
+}: CanvasHintProps) {
   if (busyStage !== null) {
     return (
       <div
@@ -49,6 +58,28 @@ export default function CanvasHint({ busyStage, busyProgress, cropOpen, compareO
         className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 animate-pop rounded-control bg-ink/85 px-3 py-1.5 text-xs text-paper"
       >
         左右拖动圆点对比修改前后
+      </p>
+    )
+  }
+
+  if (selectMode === 'point') {
+    return (
+      <p
+        role="status"
+        className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 animate-pop rounded-control bg-ink/85 px-3 py-1.5 text-xs text-paper"
+      >
+        点击物体建立选区，可连续点选 · Esc 退出
+      </p>
+    )
+  }
+
+  if (selectMode === 'brush') {
+    return (
+      <p
+        role="status"
+        className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 animate-pop rounded-control bg-ink/85 px-3 py-1.5 text-xs text-paper"
+      >
+        按住圈出要改的区域，松手即选中圈内 · Esc 退出
       </p>
     )
   }

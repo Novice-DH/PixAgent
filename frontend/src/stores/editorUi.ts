@@ -3,7 +3,25 @@
  * canvasView，绝不混入。预览是渲染态不落数据：文档回传新值即撤。 */
 import { create } from 'zustand'
 
-export type EditorPanel = 'layers' | 'adjust' | 'background' | 'expand' | null
+export type EditorPanel = 'layers' | 'adjust' | 'background' | 'expand' | 'replace' | null
+
+/** 选区交互模式：point=点选（点物体生成遮罩）、brush=笔刷（涂抹自由形状）；null=非选区态 */
+export type SelectMode = 'point' | 'brush'
+
+/** 点选标记：index 从 1 连续递增，坐标归一化（与服务端 MarkerOut 对齐）。 */
+export interface SelectionMarker {
+  index: number
+  x: number
+  y: number
+}
+
+/** 画布上的活动选区：遮罩即资产（服务端 overlay PNG 直接叠加渲染）。 */
+export interface CanvasSelection {
+  revision: number
+  maskId: string
+  maskUrl: string
+  markers: SelectionMarker[]
+}
 
 /** 调色拖动期预览：九参数当前值（与 lib/adjustPreview 对齐，sharpness/clarity 不参与） */
 export interface AdjustPreviewValues {
@@ -74,6 +92,8 @@ interface EditorUiState {
   panel: EditorPanel
   adjustPreview: AdjustPreviewValues | null
   layerPreview: LayerPreview | null
+  selectMode: SelectMode | null
+  selection: CanvasSelection | null
   selectLayer: (id: string | null) => void
   openCrop: (docWidth: number, docHeight: number) => void
   setCropRatio: (ratio: CropRatio, docWidth: number, docHeight: number) => void
@@ -85,6 +105,11 @@ interface EditorUiState {
   setPanel: (panel: EditorPanel) => void
   setAdjustPreview: (values: AdjustPreviewValues | null) => void
   setLayerPreview: (preview: LayerPreview | null) => void
+  /** 进入选区模式清其余画布模式（互斥单点）；传 null 退出但保留选区数据 */
+  setSelectMode: (mode: SelectMode | null) => void
+  setSelection: (selection: CanvasSelection | null) => void
+  /** 本地作废：selection 的 revision ≠ 当前即清——撤销/切图/重做后双端同判据失效 */
+  dropStaleSelection: (revision: number) => void
 }
 
 export const useEditorUi = create<EditorUiState>((set) => ({
@@ -97,12 +122,15 @@ export const useEditorUi = create<EditorUiState>((set) => ({
   panel: 'layers',
   adjustPreview: null,
   layerPreview: null,
+  selectMode: null,
+  selection: null,
   selectLayer: (id) => set({ selectedLayerId: id }),
   openCrop: (docWidth, docHeight) =>
     set((state) => ({
-      // 裁剪与对比互斥：开一个关另一个
+      // 裁剪与对比/选区互斥：开一个关另一个
       cropOpen: true,
       compareOpen: false,
+      selectMode: null,
       panel: state.panel,
       cropRatio: state.cropOpen ? state.cropRatio : 'free',
       cropRect: initialCropRect(state.cropOpen ? state.cropRatio : 'free', docWidth, docHeight),
@@ -112,11 +140,29 @@ export const useEditorUi = create<EditorUiState>((set) => ({
     set({ cropRatio: ratio, cropRect: initialCropRect(ratio, docWidth, docHeight) }),
   setCropRect: (rect) => set({ cropRect: rect }),
   closeCrop: () => set({ cropOpen: false, cropRect: null }),
-  openCompare: () => set((state) => ({ compareOpen: true, cropOpen: false, panel: state.panel })),
+  openCompare: () =>
+    set((state) => ({ compareOpen: true, cropOpen: false, selectMode: null, panel: state.panel })),
   setCompareAt: (at) => set({ compareAt: Math.min(1, Math.max(0, at)) }),
   closeCompare: () => set({ compareOpen: false }),
   setPanel: (panel) =>
-    set((state) => ({ panel: state.panel === panel ? null : panel, cropOpen: false, compareOpen: false })),
+    set((state) => ({
+      panel: state.panel === panel ? null : panel,
+      cropOpen: false,
+      compareOpen: false,
+      selectMode: null,
+    })),
   setAdjustPreview: (values) => set({ adjustPreview: values }),
   setLayerPreview: (preview) => set({ layerPreview: preview }),
+  setSelectMode: (mode) =>
+    set((state) => ({
+      // 选区与裁剪/对比/面板互斥：清理逻辑集中在 store 单点，散落在组件里必被遗漏
+      selectMode: mode,
+      cropOpen: false,
+      cropRect: null,
+      compareOpen: false,
+      panel: mode !== null ? null : state.panel,
+    })),
+  setSelection: (selection) => set({ selection }),
+  dropStaleSelection: (revision) =>
+    set((state) => (state.selection && state.selection.revision !== revision ? { selection: null } : {})),
 }))

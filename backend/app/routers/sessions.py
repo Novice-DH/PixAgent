@@ -6,14 +6,19 @@
 import uuid
 
 import redis.exceptions
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.db import SessionDep
 from app.deps import CurrentUser
+from app.edits.segment import SegmentError
 from app.schemas.agent import MessageIn, TurnOut
+from app.schemas.asset import AssetOut
 from app.schemas.run import RunOut
 from app.schemas.session import (
     HistoryOut,
+    MarkerOut,
+    SelectIn,
+    SelectionOut,
     SessionCreateIn,
     SessionDetailOut,
     SessionOut,
@@ -23,12 +28,15 @@ from app.schemas.session import (
     wall_out,
 )
 from app.services import agent as agent_service
-from app.services import sessions, tools
+from app.services import assets as assets_service
+from app.services import selections, sessions, tools
+from app.tools.context import ToolError
 
 router = APIRouter(tags=["sessions"])
 
 NO_UNDO_MESSAGE = "没有可撤销的操作"
 NO_REDO_MESSAGE = "没有可重做的操作"
+SELECTION_SERVICE_UNAVAILABLE = "选区服务暂时不可用，请稍后再试"
 
 
 @router.post("/sessions", response_model=SessionDetailOut, status_code=status.HTTP_201_CREATED)
@@ -213,6 +221,117 @@ async def redo_session(
             status_code=status.HTTP_409_CONFLICT, detail=NO_REDO_MESSAGE
         ) from None
     return await _detail(session, user_id, session_id)
+
+
+@router.post("/sessions/{session_id}/selection", response_model=SelectionOut)
+async def create_selection(
+    session_id: uuid.UUID, payload: SelectIn, user: CurrentUser, session: SessionDep
+) -> SelectionOut:
+    """建选区：revision 三重防护的第一重——受理时校验，旧形状不许改新画布。"""
+    try:
+        row = await sessions.get_for_user(session, user.id, session_id)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    if payload.revision != row.revision:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=selections.STALE_CANVAS_MESSAGE
+        ) from None
+    if not payload.points and not payload.strokes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="请点选或涂抹选区"
+        ) from None
+    points = [(point.x, point.y) for point in payload.points]
+    strokes = [[(point.x, point.y) for point in stroke] for stroke in payload.strokes]
+    try:
+        if strokes:
+            asset, markers = await selections.select_strokes(
+                session, row, strokes, radius=payload.radius
+            )
+        else:
+            asset, markers = await selections.select_points(
+                session, row, points, append=payload.append
+            )
+    except selections.BlankSelection:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=selections.BLANK_MASK_MESSAGE,
+        ) from None
+    except ToolError:
+        # 拍平失败（如画布引用的素材不存在）是数据/环境故障，有界透出而非 500
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SELECTION_SERVICE_UNAVAILABLE,
+        ) from None
+    except SegmentError:
+        # 分割提供方不可用（rembg 显式指定但失败、配置未知值）是环境故障非用户错误
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SELECTION_SERVICE_UNAVAILABLE,
+        ) from None
+    except redis.exceptions.RedisError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SELECTION_SERVICE_UNAVAILABLE,
+        ) from None
+    return SelectionOut(
+        revision=row.revision,
+        mask=AssetOut.of(asset),
+        markers=[MarkerOut(**marker) for marker in markers],
+    )
+
+
+@router.get("/sessions/{session_id}/selection", response_model=SelectionOut | None)
+async def get_selection(
+    session_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> SelectionOut | None:
+    """读选区：无选区与 revision 不匹配同为 null——读取侧防护把旧 payload
+    折叠成「没有选区」，前端按无选区渲染。"""
+    try:
+        row = await sessions.get_for_user(session, user.id, session_id)
+        payload = await selections.get(session_id, row.revision)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    except redis.exceptions.RedisError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SELECTION_SERVICE_UNAVAILABLE,
+        ) from None
+    if payload is None or not payload.get("mask_asset_id"):
+        return None
+    asset = await assets_service.get_for_user(
+        session, user.id, uuid.UUID(str(payload["mask_asset_id"]))
+    )
+    if asset is None:
+        return None
+    return SelectionOut(
+        revision=row.revision,
+        mask=AssetOut.of(asset),
+        markers=[MarkerOut(**marker) for marker in payload.get("markers") or []],
+    )
+
+
+@router.delete("/sessions/{session_id}/selection", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_selection(
+    session_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> Response:
+    try:
+        await sessions.get_for_user(session, user.id, session_id)
+    except sessions.SessionNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=sessions.SESSION_NOT_FOUND
+        ) from None
+    try:
+        await selections.clear(session_id)
+    except redis.exceptions.RedisError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SELECTION_SERVICE_UNAVAILABLE,
+        ) from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -15,9 +15,10 @@ from app.tools.canvas import (
 )
 from app.tools.enhance import EXPAND_CANVAS, REPLACE_BACKGROUND, UPSCALE_IMAGE
 from app.tools.generate import GENERATE_IMAGE
+from app.tools.region import ERASE_REGION, REPLACE_REGION
 from app.tools.retouch import ADJUST_IMAGE, REMOVE_BACKGROUND
 
-# 注册表最终顺序与命名（S12 十二工具：生成式三工具追加在 generate_image 之后）
+# 注册表最终顺序与命名（S13 十四工具：选区两工具插在 adjust_image 之后、crop_canvas 之前）
 SPECS: tuple[ToolSpec, ...] = (
     GENERATE_IMAGE,
     REPLACE_BACKGROUND,
@@ -25,6 +26,8 @@ SPECS: tuple[ToolSpec, ...] = (
     UPSCALE_IMAGE,
     REMOVE_BACKGROUND,
     ADJUST_IMAGE,
+    ERASE_REGION,
+    REPLACE_REGION,
     CROP_CANVAS,
     FLIP_LAYER,
     SET_LAYER_OPACITY,

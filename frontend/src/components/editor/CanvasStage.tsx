@@ -15,11 +15,13 @@ import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage, Transform
 
 import type { Layer as DocumentLayer, LayerDocument } from '@/api/sessions'
 import { toAdjustPreview } from '@/lib/adjustPreview'
+import { brushWidth } from '@/lib/brush'
 import { useCanvasImage } from '@/hooks/useCanvasImage'
 import { useElementSize } from '@/hooks/useElementSize'
+import { useSelectStroke } from '@/hooks/useSelectStroke'
+import SelectionOverlay from '@/components/editor/SelectionOverlay'
 import { useCanvasView } from '@/stores/canvasView'
-import { useEditorUi, type CropRect as NormalizedCropRect, type LayerPreview } from '@/stores/editorUi'
-
+import { useEditorUi, type CropRect as NormalizedCropRect, type LayerPreview, type SelectMode } from '@/stores/editorUi'
 interface CanvasStageProps {
   sessionId: string
   document: LayerDocument
@@ -27,6 +29,14 @@ interface CanvasStageProps {
   previousDocument: LayerDocument | null
   /** asset_id → 签名 URL（图片墙现算，前端只消费） */
   resolveAssetUrl: (assetId: string | null) => string | null
+  /** 选区模式：point=点选、brush=笔刷、null=非选区态（与画布其余模式互斥） */
+  selectMode: SelectMode | null
+  /** 选区请求进行中：手势回调整体短路 */
+  selectionBusy: boolean
+  /** 点选命中（归一化坐标，越界已丢弃） */
+  onPointSelect: (x: number, y: number) => void
+  /** 笔刷一笔完成（完整笔迹，归一化坐标） */
+  onStrokeCommit: (stroke: { x: number; y: number }[]) => void
 }
 
 const MIN_CROP_PX = 32 // 与后端 MIN_CROP 一致：裁出更小的画布后续链路不接受
@@ -117,6 +127,10 @@ export default function CanvasStage({
   document: doc,
   previousDocument,
   resolveAssetUrl,
+  selectMode,
+  selectionBusy,
+  onPointSelect,
+  onStrokeCommit,
 }: CanvasStageProps) {
   const [containerRef, size] = useElementSize<HTMLDivElement>()
   // 视图状态按字段订阅：缓动每帧 set，选择器订阅是动画不卡整树的前提
@@ -142,6 +156,11 @@ export default function CanvasStage({
   const selectLayer = useEditorUi((state) => state.selectLayer)
   const adjustPreviewValues = useEditorUi((state) => state.adjustPreview)
   const layerPreview = useEditorUi((state) => state.layerPreview)
+  const selection = useEditorUi((state) => state.selection)
+
+  // 选区手势：笔迹收集是 ref + draft state，实时渲染走 SelectionOverlay
+  const stroke = useSelectStroke()
+  const selecting = selectMode !== null
 
   // 滤镜数组 useMemo：数值不变保持同一引用，节点缓存不重建
   const adjustFilters = useMemo<((imageData: ImageData) => void)[] | null>(
@@ -152,8 +171,8 @@ export default function CanvasStage({
     [adjustPreviewValues],
   )
 
-  // 交互互斥：裁剪禁平移与缩放；对比禁平移
-  const stageDraggable = !cropOpen && !compareOpen
+  // 交互互斥：裁剪禁平移与缩放；对比禁平移；选区态 crosshair 手势接管画布
+  const stageDraggable = !cropOpen && !compareOpen && !selecting
 
   useEffect(() => {
     setViewport(size.width, size.height)
@@ -173,7 +192,7 @@ export default function CanvasStage({
 
   const handleWheel = (event: KonvaEventObject<WheelEvent>) => {
     event.evt.preventDefault()
-    if (cropOpen) return // 裁剪模式禁用缩放与平移
+    if (cropOpen || selecting) return // 裁剪/选区模式禁用缩放与平移
     // 触控板捏合被浏览器报成 ctrlKey 滚轮事件，正好落进缩放分支
     if (event.evt.ctrlKey || event.evt.metaKey) {
       const pointer = event.target.getStage()?.getPointerPosition()
@@ -192,7 +211,45 @@ export default function CanvasStage({
   }
 
   const handleLayerClick = (layerId: string) => {
-    if (!cropOpen && !compareOpen) selectLayer(layerId)
+    if (!cropOpen && !compareOpen && !selecting) selectLayer(layerId)
+  }
+
+  // ---- 选区手势：屏幕坐标 → 画布归一化坐标（越界丢弃）；busy 时回调整体短路 ----
+
+  const normalizedPointer = (event: KonvaEventObject<MouseEvent>): { x: number; y: number } | null => {
+    const stage = event.target.getStage()
+    const pointer = stage?.getPointerPosition()
+    if (!stage || !pointer) return null
+    // Stage 无 scale 变换（只有平移），反转后即画布坐标系
+    const local = stage.getAbsoluteTransform().copy().invert().point(pointer)
+    const nx = (local.x - x) / (doc.width * scale)
+    const ny = (local.y - y) / (doc.height * scale)
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null
+    return { x: nx, y: ny }
+  }
+
+  const handleStageMouseDown = (event: KonvaEventObject<MouseEvent>) => {
+    if (selectMode !== 'brush' || selectionBusy) return
+    const point = normalizedPointer(event)
+    if (point) stroke.begin(point)
+  }
+
+  const handleStageMouseMove = (event: KonvaEventObject<MouseEvent>) => {
+    if (selectMode !== 'brush' || !stroke.draft) return
+    const point = normalizedPointer(event)
+    if (point) stroke.extend(point)
+  }
+
+  const handleStageMouseUp = () => {
+    if (selectMode !== 'brush') return
+    const finished = stroke.end()
+    if (finished) onStrokeCommit(finished)
+  }
+
+  const handleStageClick = (event: KonvaEventObject<MouseEvent>) => {
+    if (selectMode !== 'point' || selectionBusy) return
+    const point = normalizedPointer(event)
+    if (point) onPointSelect(point.x, point.y)
   }
 
   const imageLayers = doc.layers.filter((layer) => layer.visible && layer.kind === 'image')
@@ -280,7 +337,11 @@ export default function CanvasStage({
     <div
       ref={containerRef}
       className={`relative h-full w-full overflow-hidden bg-canvas ${
-        cropOpen || compareOpen ? '' : 'cursor-grab active:cursor-grabbing'
+        selecting
+          ? 'cursor-crosshair'
+          : cropOpen || compareOpen
+            ? ''
+            : 'cursor-grab active:cursor-grabbing'
       }`}
     >
       {size.width > 0 && size.height > 0 && (
@@ -292,11 +353,15 @@ export default function CanvasStage({
           onDragMove={syncPan}
           onDragEnd={syncPan}
           onDblClick={() => {
-            if (!cropOpen) fit(doc.width, doc.height)
+            if (!cropOpen && !selecting) fit(doc.width, doc.height)
           }}
+          onMouseDown={handleStageMouseDown}
+          onMouseMove={handleStageMouseMove}
+          onMouseUp={handleStageMouseUp}
+          onClick={handleStageClick}
         >
-          {/* 裁剪/对比打开时内容层不响应事件，交互全部让给裁剪框 */}
-          <Layer listening={!cropOpen && !compareOpen}>
+          {/* 裁剪/对比/选区打开时内容层不响应事件，交互全部让给当前模式 */}
+          <Layer listening={!cropOpen && !compareOpen && !selecting}>
             <Rect
               x={x}
               y={y}
@@ -447,6 +512,24 @@ export default function CanvasStage({
                   const boxY = Math.min(Math.max(newBox.y, docY), docY + docH - height)
                   return { ...newBox, x: boxX, y: boxY, width, height }
                 }}
+              />
+            </Layer>
+          )}
+
+          {/* 选区叠加常驻最上层（Layer 直挂 Stage、listening=false）：
+              遮罩 + draft 笔迹 + 序号徽标 */}
+          {selection && (
+            <Layer listening={false}>
+              <SelectionOverlay
+                maskUrl={selection.maskUrl}
+                markers={selection.markers}
+                draft={selectMode === 'brush' ? stroke.draft : null}
+                docWidth={doc.width}
+                docHeight={doc.height}
+                viewX={x}
+                viewY={y}
+                scale={scale}
+                brushPx={brushWidth(doc.width, doc.height)}
               />
             </Layer>
           )}

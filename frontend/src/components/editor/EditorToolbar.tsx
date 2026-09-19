@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 
 import { useCanvasView, ZOOM_STEP } from '@/stores/canvasView'
-import type { CropRatio } from '@/stores/editorUi'
+import type { CropRatio, SelectMode } from '@/stores/editorUi'
 
 interface ToolAction {
   busy: boolean
@@ -44,6 +44,13 @@ interface EditorToolbarProps {
   onCropRatio: (ratio: CropRatio) => void
   onCropConfirm: () => void
   onCropCancel: () => void
+  /** 选区模式与活动选区（null = 非选区态） */
+  selectMode: SelectMode | null
+  hasSelection: boolean
+  onSelectMode: (mode: SelectMode | null) => void
+  onEraseRegion: () => void
+  onReplaceRegion: () => void
+  onClearSelection: () => void
 }
 
 function ToolButton({
@@ -106,6 +113,12 @@ export default function EditorToolbar({
   onCropRatio,
   onCropConfirm,
   onCropCancel,
+  selectMode,
+  hasSelection,
+  onSelectMode,
+  onEraseRegion,
+  onReplaceRegion,
+  onClearSelection,
 }: EditorToolbarProps) {
   // 视图状态按字段订阅：缩放百分比随 scale 更新，动作引用稳定（−/＋ 走 stepZoom 缓动）
   const scale = useCanvasView((state) => state.scale)
@@ -193,9 +206,51 @@ export default function EditorToolbar({
             <ToolButton label="确定" onClick={onCropConfirm} title="应用裁剪" />
             <ToolButton label="取消" onClick={onCropCancel} />
           </>
+        ) : selectMode !== null ? (
+          // 选区态整组切换：点选/笔刷互切、消除/替换（需有选区）、清除、完成
+          <>
+            <ToolButton
+              label="点选"
+              pressed={selectMode === 'point'}
+              onClick={() => onSelectMode('point')}
+              title="点击物体建立选区"
+            />
+            <ToolButton
+              label="笔刷"
+              pressed={selectMode === 'brush'}
+              onClick={() => onSelectMode('brush')}
+              title="涂抹圈出要改的区域"
+            />
+            <ToolButton
+              label="消除"
+              onClick={onEraseRegion}
+              disabled={!hasSelection || action.busy}
+              title="移除选中物体，用周围背景自然填补"
+            />
+            <ToolButton
+              label="替换"
+              onClick={onReplaceRegion}
+              disabled={!hasSelection}
+              title="按描述只改选区内容"
+            />
+            <ToolButton label="清除" onClick={onClearSelection} disabled={!hasSelection} title="清空当前选区" />
+            <ToolButton label="完成" onClick={() => onSelectMode(null)} title="退出选区模式" />
+          </>
         ) : (
           <>
             <ToolButton label="裁剪" onClick={onEnterCrop} />
+            <ToolButton
+              label="点选"
+              onClick={() => onSelectMode('point')}
+              disabled={action.busy}
+              title="点击物体建立选区（局部消除/替换）"
+            />
+            <ToolButton
+              label="笔刷"
+              onClick={() => onSelectMode('brush')}
+              disabled={action.busy}
+              title="涂抹圈出要修改的区域"
+            />
             <ToolButton label="水平翻转" onClick={onFlipHorizontal} disabled={action.busy} />
             <ToolButton label="垂直翻转" onClick={onFlipVertical} disabled={action.busy} />
             <ToolButton label="去背景" onClick={onRemoveBackground} disabled={action.busy} />

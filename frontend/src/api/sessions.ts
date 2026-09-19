@@ -73,6 +73,33 @@ export interface HistoryEntry {
   created_at: string
 }
 
+/** 点选标记：index 从 1 连续递增，坐标归一化。 */
+export interface SelectionMarker {
+  index: number
+  x: number
+  y: number
+}
+
+/** 选区出参：遮罩即资产（现算签名 URL，前端叠加直接消费）。 */
+export interface Selection {
+  revision: number
+  mask: Asset
+  markers: SelectionMarker[]
+}
+
+export interface SelectionPointInput {
+  x: number
+  y: number
+}
+
+export interface SelectInput {
+  revision: number
+  points?: SelectionPointInput[]
+  strokes?: SelectionPointInput[][]
+  radius?: number
+  append?: boolean
+}
+
 /** 编辑动作中文案（编辑记录/步骤卡用；与后端注册表 label 手工同步）。 */
 export const ACTION_LABELS: Record<string, string> = {
   create_session: '新建会话',
@@ -83,6 +110,8 @@ export const ACTION_LABELS: Record<string, string> = {
   upscale_image: '超分',
   remove_background: '去背景',
   adjust_image: '调色',
+  erase_region: '局部消除',
+  replace_region: '局部替换',
   crop_canvas: '裁剪',
   flip_layer: '翻转',
   set_layer_opacity: '透明度',
@@ -141,4 +170,9 @@ export const sessionsApi = {
     expectJson(api.post<SessionDetail>(`/sessions/${sessionId}/undo`)),
   redo: (sessionId: string) =>
     expectJson(api.post<SessionDetail>(`/sessions/${sessionId}/redo`)),
+  select: (sessionId: string, input: SelectInput) =>
+    expectJson(api.post<Selection>(`/sessions/${sessionId}/selection`, input)),
+  // 无选区或 revision 不匹配：200 + null（读取侧防护把旧 payload 折叠成没有选区）
+  getSelection: (sessionId: string) => api.get<Selection | null>(`/sessions/${sessionId}/selection`),
+  clearSelection: (sessionId: string) => api.delete<undefined>(`/sessions/${sessionId}/selection`),
 }
